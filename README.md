@@ -3,6 +3,11 @@ A frequency scanner for GQRX
 ## Description
 [work in progress]
 
+** Warning **
+
+This repository is not ready yet. I have to complete parsing options and so forth, so please ignore it for now.
+
+
 A simple scanner written in C that uses gqrx remote protocol to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks to look for already stored frequencies or, in a free sweep scan mode, to explore the band within a specified frequency range. 
 
 The sweep scan uses an adaptive algorithm to remember active frequencies during the sweep that prioritizes active stations without stopping the sweep for new ones. 
