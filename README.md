@@ -13,8 +13,8 @@ The sweep is performed fast (well, as fast as it can get), on signal detection a
 
 ## Features
 * Support for gqrx bookmarks file format
-* frequency range contrained scan (also for bookmarks)
-* fast free sweep scan with memory of already seen stations
+* Frequency range constrained scan (also for bookmarks)
+* Fast free sweep scan with memory of already seen stations
 
 
 ## TODOs
