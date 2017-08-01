@@ -112,6 +112,7 @@ bool Recv(int sockfd, char *buf)
     if (n < 0) 
       error("ERROR reading from socket");
     buf[n]= '\0';
+    return true;
 }
 
 //
@@ -486,7 +487,7 @@ long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
             start = end = i;
         }
     }
-    l = start; ;
+    l = start;
     current_freq = levels2[l].freq;
     SetFreq(sockfd, current_freq);
 
