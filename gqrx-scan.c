@@ -474,7 +474,7 @@ int main(int argc, char **argv) {
     ScanFrequenciesInRange(sockfd, freq_min, freq_max, 10000);
 
 
-
+    fclose (bookmarksfd);
     close(sockfd);
     return 0;
 }
