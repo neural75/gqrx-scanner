@@ -2,15 +2,26 @@
     // See https://go.microsoft.com/fwlink/?LinkId=733558
     // for the documentation about the tasks.json format
     "version": "2.0.0",
+    "options": {
+            "cwd": "${workspaceRoot}/bin/Debug"
+    },
+
     "tasks": [
         {
             "taskName": "Build",
-            "command": "gcc -g -o gqrx-scan gqrx-scan.c -lm",
+            "command": "make",
             "type": "shell",
             "group": {
                 "kind": "build",
                 "isDefault": true
             }
+        },
+        {
+            "taskName": "Clean",
+            "command": "make clean",
+            "type": "shell",
+            "group": "build",
+            "problemMatcher": []
         }
     ]
 }

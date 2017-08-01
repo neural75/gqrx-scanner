@@ -8,6 +8,6 @@ set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} CACHE PATH "Libr
 
 # The following folder will be included
 include_directories("${PROJECT_SOURCE_DIR}")
-add_executable(gqrx-scan ${PROJECT_SOURCE_DIR}/gqrx-scan.c)
+add_executable(gqrx-scan ${PROJECT_SOURCE_DIR}/gqrx-scan.c ${PROJECT_SOURCE_DIR}/gqrx-prot.c)
 target_link_libraries(gqrx-scan m)
 install (TARGETS gqrx-scan DESTINATION bin)
