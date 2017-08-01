@@ -286,18 +286,34 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, long freq_min, long freq_max)
 
 }
 
+//
+// Save frequency found
+//
 bool SaveFreq(long freq_current)
 {
     bool found = false;
+    long tollerance = 5000; // 10Khz bwd
+
+    int  temp_count = 0;
+    long delta, temp_delta = tollerance;
+    int  temp_i     = 0;
+
     for (int i = 0; i < SavedFreq_Max; i++)
     {
-        if (freq_current == SavedFrequencies[i].freq)
+        // Find a previous hit with some tollerance
+        if (freq_current >= (SavedFrequencies[i].freq - tollerance) &&
+            freq_current <  (SavedFrequencies[i].freq + tollerance)   )
         {
-            // found exact match 
-            SavedFrequencies[i].count++;
-            SavedFrequencies[i].miss = 0;// reset miss count
+            // found match, loop for minimum delta
+            delta = abs(freq_current - SavedFrequencies[i].freq); 
+            if ( delta < temp_delta )
+            {
+                // Found a better match
+                temp_delta = delta;
+                temp_count = SavedFrequencies[i].count;
+                temp_i     = i;
+            }
             found = true;
-            break;
         }
     }
     if (!found)
@@ -308,7 +324,16 @@ bool SaveFreq(long freq_current)
         SavedFreq_Max++;
         if (SavedFreq_Max >= SAVED_FREQ_MAX)
             SavedFreq_Max = 0; // restart from scratch ? 
+        return true;
     }
+
+
+    // calculate a better one for the next time
+    int count = temp_count;
+    SavedFrequencies[temp_i].freq = (( ((long long)SavedFrequencies[temp_i].freq * count ) + freq_current ) / (count + 1));
+    SavedFrequencies[temp_i].count++;
+    SavedFrequencies[temp_i].miss = 0;// reset miss count
+    
 
     return true;
 }
@@ -320,7 +345,7 @@ bool SaveFreq(long freq_current)
 //
 long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
 {
-    long freq_min   = current_freq - 15000;
+    long freq_min   = current_freq - 10000;
     long freq_max   = current_freq + 10000;
     long freq_steps = freq_interval;
     long max_levels = (freq_max - freq_min) / freq_steps ;
@@ -363,6 +388,33 @@ long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
     SetFreq(sockfd, current_freq);
     usleep(150000);  
    
+    // before second pass fine tuning we check if the frequency is already known (and tuned with a mean value computed)
+    // See SaveFreq
+    long tollerance = 7000;
+    bool found = false;
+    for (int i = 0; i < SavedFreq_Max; i++)
+    {
+        // Find a previous hit with some tollerance
+        if (current_freq >= (SavedFrequencies[i].freq - tollerance) &&
+            current_freq <  (SavedFrequencies[i].freq + tollerance)   )
+        {
+            if (SavedFrequencies[i].count > 4) // 4 fine tuned frequency is good enough to have a candidate freq
+            {
+                current_freq = SavedFrequencies[i].freq;
+                found = true;
+                break;
+            }
+        }
+    }
+    
+    if (found)
+    {
+        SetFreq(sockfd, current_freq);
+        usleep(150000);      
+        // Cheating: here I return the rough value from the first pass to avoid stucking on possibly wrong freq.
+        return levels[l].freq;    
+    }
+
     // Second pass - Fine tuning + - 5Khz (freq_steps input) with 1 khz steps
     // Dived in two half, follow one until the level decreases if so follow the second half 
     // (hopefully this reduces the num of steps), tries to average out spikes, 3 sample
@@ -479,8 +531,8 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
         GetSignalLevelEx(sockfd, &level, 3 );
         if (level >= squelch)
         {
-            SaveFreq(current_freq);
             current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
+            SaveFreq(current_freq);            
             printf ("Freq: %ld MHz found", current_freq);
             fflush(stdout);
             // Wait user input or delay time after signal lost
@@ -564,8 +616,8 @@ int main(int argc, char **argv) {
     bzero(SavedFrequencies, sizeof(SavedFrequencies));
 
 
-    long freq_min =  460040000;
-    long freq_max =  460600000;
+    long freq_min =  430000000;
+    long freq_max =  431600000;
 
 
     //ScanBookmarkedFrequenciesInRange(sockfd, freq_min, freq_max);
