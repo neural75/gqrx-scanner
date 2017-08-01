@@ -5,7 +5,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/gqrx-scan",
+            "program": "${workspaceRoot}/bin/Debug/gqrx-scan",
             "args": ["localhost", "7356"],
             "stopAtEntry": false,
             "cwd": "${workspaceRoot}",

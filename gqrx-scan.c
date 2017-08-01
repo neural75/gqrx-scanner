@@ -7,8 +7,10 @@
  *                  [-d|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
  */
 #include <stdio.h>
+#include <stdio_ext.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -20,10 +22,12 @@
 #include <pwd.h>
 #include <stdbool.h>
 #include <linux/limits.h>
-#include <math.h>
+#include <termios.h>
 
 #include "gqrx-prot.h"
 
+#define NB_ENABLE    true
+#define NB_DISABLE   false
 
 //
 // Globals
@@ -43,7 +47,105 @@ int  Frequencies_Max = 0;
 FREQ SavedFrequencies[SAVED_FREQ_MAX];
 int  SavedFreq_Max = 0;
 
+//
+// Utilities
+//
+int kbhit(void)
+{
+    struct timeval tv;
+    fd_set fds;
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds); //STDIN_FILENO is 0
+    select(STDIN_FILENO+1, &fds, NULL, NULL, &tv);
+    return FD_ISSET(STDIN_FILENO, &fds);    
+}
+//
+// Set/Reset non blocking mode
+//
+void nonblock(int state)
+{
+    struct termios ttystate;
+ 
+    //get the terminal state
+    tcgetattr(STDIN_FILENO, &ttystate);
+ 
+    if (state==NB_ENABLE)
+    {
+        //turn off canonical mode
+        ttystate.c_lflag &= ~ICANON;
+        //minimum of number input read.
+        ttystate.c_cc[VMIN] = 1;
+    }
+    else if (state==NB_DISABLE)
+    {
+        //turn on canonical mode
+        ttystate.c_lflag |= ICANON;
+    }
+    //set the terminal attributes.
+    tcsetattr(STDIN_FILENO, TCSANOW, &ttystate);
+}
 
+//
+//
+//
+bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
+{
+    double    squelch;
+    double  level;
+    long    sleep_time = 0, sleep = 100000; // 100 ms
+    int     exit = 0;
+    char    c;
+    
+    __fpurge(stdin);
+    nonblock(NB_ENABLE);
+    
+    do
+    {
+        GetCurrentFreq(sockfd,  current_freq);
+        GetSquelchLevel(sockfd, &squelch);
+        GetSignalLevel(sockfd,  &level );
+        exit = kbhit();
+        if (exit !=  0)
+        {
+            c = fgetc(stdin);
+            // <space> or <enter> ?
+            if ( (c == ' ') || (c == '\n') )
+            {
+                exit = 1; // exit
+                break; 
+            }
+            else
+                exit = 0;
+        }
+        // exit = 0
+        if (level < squelch )
+        {
+            // Signal drop below the threshold, start counting sleep time
+            sleep_time += sleep;
+            if (sleep_time > delay)
+                exit = 1;
+        }
+        else 
+        {
+            sleep_time = 0; // 
+        }
+        // someone is tx'ing
+        usleep(sleep); 
+    } while ( !exit ) ; 
+
+    nonblock(NB_DISABLE);
+    // restart scanning
+    *current_freq+=10000;
+    // round up to next near tenth of khz  145892125 -> 145900000
+    *current_freq = ceil( *current_freq / 10000.0 ) * 10000.0; 
+    
+    printf (" Scanning...\n");
+    fflush(stdout);
+    __fpurge(stdin);
+    return !(sleep_time > delay); 
+}
 
 //
 // Open
@@ -160,6 +262,9 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, long freq_min, long freq_max)
                         printf ("Freq: %ld MHz found (%s), Level:%.2f ", current_freq, Frequencies[i].descr, level);
                         fflush(stdout);
                     }
+
+                    // Wait user input or delay time
+
                     while (level > squelch) // someone is tx'ing
                     {
                         printf(".");
@@ -215,8 +320,8 @@ bool SaveFreq(long freq_current)
 //
 long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
 {
-    long freq_min   = current_freq - 10000;
-    long freq_max   = current_freq + 15000;
+    long freq_min   = current_freq - 15000;
+    long freq_max   = current_freq + 10000;
     long freq_steps = freq_interval;
     long max_levels = (freq_max - freq_min) / freq_steps ;
     typedef struct { double level; long freq; } LEVELS;
@@ -357,13 +462,19 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
     int min_hit_threshold = 2;
     // maximum miss threshold on frequencies not seen anymore: above this the candidate count is decremented
     int max_miss_threshold = 10;  
+    long sleep_cyle         = 10000 ; // wait 50ms after setting freq to get signal level 
+    long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
+    long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
+    bool skip = false;   // user input
+
     while (true)
     {
         SetFreq(sockfd, current_freq);
         if (saved_cycle)
-            usleep(85000);
+            usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
         else
-            usleep(50000);
+            usleep((skip)?sleep_cycle_active:sleep_cyle);
+
         GetSquelchLevel(sockfd, &squelch);
         GetSignalLevelEx(sockfd, &level, 3 );
         if (level >= squelch)
@@ -372,9 +483,12 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
             current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
             printf ("Freq: %ld MHz found", current_freq);
             fflush(stdout);
+            // Wait user input or delay time after signal lost
+            skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
         }
         else
         {
+            skip = false;
             // no activities
             if (saved_cycle)
             {
@@ -386,23 +500,7 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
                 }
             }
         }
-        while (level >= squelch) // someone is tx'ing
-        {
-            printf(".");
-            usleep(2000000);
-            GetCurrentFreq(sockfd, &current_freq);
-            GetSquelchLevel(sockfd, &squelch);
-            GetSignalLevel(sockfd, &level );
-            if (level < squelch)
-            {
-                // restart scanning
-                // round up to near khz  145892125 -> 145892000
-                current_freq = ( current_freq / 10000 ) * 10000; 
-                
-                printf (" Scanning...\n");
-            }
-            fflush(stdout);    
-        }
+
         // Loop saved freq after a while
         if (sweep_count > 40)
         {
@@ -466,8 +564,8 @@ int main(int argc, char **argv) {
     bzero(SavedFrequencies, sizeof(SavedFrequencies));
 
 
-    long freq_min =  27200000;
-    long freq_max =  28800000;
+    long freq_min =  460040000;
+    long freq_max =  460600000;
 
 
     //ScanBookmarkedFrequenciesInRange(sockfd, freq_min, freq_max);
