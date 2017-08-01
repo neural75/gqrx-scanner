@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include <linux/limits.h>
 #include <termios.h>
+#include <time.h>
 
 #include "gqrx-prot.h"
 
@@ -86,9 +87,60 @@ void nonblock(int state)
     //set the terminal attributes.
     tcsetattr(STDIN_FILENO, TCSANOW, &ttystate);
 }
+//
+// GetTimeStamp
+// Get the time stamp dd-mm-yy hh:mm:ss
+//
+time_t GetTimeStamp(char *timestamp)
+{
+    time_t etime = time(NULL);
+    struct tm *ltime = localtime (&etime);
+    sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,
+            ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
+    return etime;
+}
+// Calculate difference in time in [dd days][hh:][mm:][ss secs]
+time_t DiffTime(char *timestamp, time_t start_time)
+{
+    double seconds;
+    time_t etime = time (NULL);
+    seconds = difftime(etime , start_time);
+
+    time_t elapssed = (time_t)seconds; //aerrg
+    struct tm *ltime = localtime(&elapssed);
+
+    timestamp[0] = '\0';
+    if (ltime->tm_mday > 1)
+    {
+        char days[10];
+        sprintf(days, "%2d days ", ltime->tm_mday-1);
+        strcat(timestamp, days);
+    }
+    if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
+    {
+        char hours[10];
+        sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
+        strcat(timestamp, hours);
+    }
+    if (ltime->tm_min > 0)
+    {
+        char min[10];
+        sprintf(min, "%2.2d:", ltime->tm_min);
+        strcat(timestamp, min);
+    }
+    if (ltime->tm_sec > 0)
+    {
+        char sec[10];
+        sprintf(sec, "%2.2d sec", ltime->tm_sec);
+        strcat(timestamp, sec);
+    }
+    return elapssed;
+}
 
 //
-//
+// WaitUserInputOrDelay
+// Waits for user input or a delay after the carrier is gone
+// Returns if the user has pressed <space> or <enter> to skip frequency
 //
 bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
 {
@@ -141,8 +193,6 @@ bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
     // round up to next near tenth of khz  145892125 -> 145900000
     *current_freq = ceil( *current_freq / 10000.0 ) * 10000.0; 
     
-    printf (" Scanning...\n");
-    fflush(stdout);
     __fpurge(stdin);
     return !(sleep_time > delay); 
 }
@@ -243,7 +293,10 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, long freq_min, long freq_max)
     long current_freq = freq_min;
 
     SetFreq(sockfd, freq_min);
-    
+    bool skip = false;
+    long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
+    long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
+    char timestamp[BUFSIZE] = {0};
     while (true)
     {
         for (int i = 0; i < Frequencies_Max; i++)
@@ -255,29 +308,20 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, long freq_min, long freq_max)
                     // Found a bookmark in the range
                     SetFreq(sockfd, current_freq);
                     GetSquelchLevel(sockfd, &squelch);
-                    usleep(100000);
+                    usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
                     GetSignalLevelEx(sockfd, &level, 3 );
                     if (level >= squelch)
                     {
-                        printf ("Freq: %ld MHz found (%s), Level:%.2f ", current_freq, Frequencies[i].descr, level);
+                        time_t hit_time = GetTimeStamp(timestamp);
+                        printf ("%s - Freq: %ld MHz active [%s], Level:%.2f/%.2f ", timestamp, current_freq, Frequencies[i].descr, level, squelch);
+                        fflush(stdout);
+                        skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
+                        time_t elapsed = DiffTime(timestamp, hit_time);
+                        printf (" [elapsed time %s]\n", timestamp);
                         fflush(stdout);
                     }
-
-                    // Wait user input or delay time
-
-                    while (level > squelch) // someone is tx'ing
-                    {
-                        printf(".");
-                        usleep(4000000);
-                        GetSquelchLevel(sockfd, &squelch);
-                        GetSignalLevelEx(sockfd, &level, 3 );
-                        if (level < squelch)
-                        {
-                            printf (" Scanning...\n");
-                        }
-                        fflush(stdout);                         
-                        
-                    }
+                    else    
+                        skip = false;
                     
                 }
         }
@@ -518,6 +562,7 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
     long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
     long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
     bool skip = false;   // user input
+    char timestamp[BUFSIZE] = {0};
 
     while (true)
     {
@@ -532,11 +577,15 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
         if (level >= squelch)
         {
             current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
-            SaveFreq(current_freq);            
-            printf ("Freq: %ld MHz found", current_freq);
+            SaveFreq(current_freq);    
+            time_t hit_time = GetTimeStamp(timestamp);
+            printf ("%s - Freq: %ld MHz active, Level:%.2f/%.2f ", timestamp, current_freq, level, squelch);
             fflush(stdout);
             // Wait user input or delay time after signal lost
             skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
+            time_t elapsed = DiffTime(timestamp, hit_time);
+            printf (" [elapsed time %s]\n", timestamp);
+            fflush(stdout);
         }
         else
         {

@@ -26,7 +26,7 @@ The sweep is performed fast (well, as fast as it can get), on signal detection a
 * tags matching filters (only bookmarked frequencies with specified tag) 
 * automatic audio recording on signal detection
 * configurable thresholds (delay time, and so on)
-* better output (timestamps and other info)
+
 
 ## Build
 <pre>
