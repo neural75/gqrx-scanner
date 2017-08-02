@@ -42,11 +42,27 @@ typedef struct {
 }FREQ;
 
 
-FREQ Frequencies[FREQ_MAX];
+FREQ Frequencies[FREQ_MAX] = {0};
 int  Frequencies_Max = 0;
 
-FREQ SavedFrequencies[SAVED_FREQ_MAX];
+FREQ SavedFrequencies[SAVED_FREQ_MAX] = {0};
 int  SavedFreq_Max = 0;
+
+FREQ BannedFrequencies[SAVED_FREQ_MAX] = {0};
+int  BannedFreq_Max = 0;
+
+//
+// Defaults
+//
+const char      *g_hostname     = "localhost";
+const int       g_portno        = 7356;
+const long      g_freq_delta    = 1000000; // +- Mhz Bandwidth to scan from current freq. 
+const long      g_ban_tollerance    = 10000; // +- Khz bandwidth to ban from current freq.
+
+//
+// Local Prototypes
+//
+bool BanFreq (long freq_current);
 
 //
 // Utilities
@@ -149,6 +165,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
     long    sleep_time = 0, sleep = 100000; // 100 ms
     int     exit = 0;
     char    c;
+    bool    skip = false;
     
     __fpurge(stdin);
     nonblock(NB_ENABLE);
@@ -166,10 +183,21 @@ bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
             if ( (c == ' ') || (c == '\n') )
             {
                 exit = 1; // exit
+                skip = true;
                 break; 
             }
+            else if ( c == 'b' )
+            {
+                // Ban a frequency
+                BanFreq(*current_freq);
+                exit = 1;
+                skip = true;
+                break;
+            }
             else
+            {
                 exit = 0;
+            }
         }
         // exit = 0
         if (level < squelch )
@@ -177,7 +205,10 @@ bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
             // Signal drop below the threshold, start counting sleep time
             sleep_time += sleep;
             if (sleep_time > delay)
+            {
                 exit = 1;
+                skip = false;
+            }
         }
         else 
         {
@@ -188,13 +219,15 @@ bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
     } while ( !exit ) ; 
 
     nonblock(NB_DISABLE);
+    
+
     // restart scanning
-    *current_freq+=10000;
+    *current_freq+=g_ban_tollerance;
     // round up to next near tenth of khz  145892125 -> 145900000
     *current_freq = ceil( *current_freq / 10000.0 ) * 10000.0; 
     
     __fpurge(stdin);
-    return !(sleep_time > delay); 
+    return skip; 
 }
 
 //
@@ -381,6 +414,54 @@ bool SaveFreq(long freq_current)
 
     return true;
 }
+
+//
+// Ban a frequency found 
+//
+bool BanFreq (long freq_current)
+{
+    int i = BannedFreq_Max;
+    if (i >= SAVED_FREQ_MAX)
+        return false;
+
+    BannedFrequencies[i].freq  = freq_current;
+    BannedFreq_Max++;
+
+    for (i = 0; i < SavedFreq_Max; i++)
+    {
+        // Find a previous hit with some tollerance
+        if (freq_current >= (SavedFrequencies[i].freq - g_ban_tollerance) &&
+            freq_current <  (SavedFrequencies[i].freq + g_ban_tollerance)   )
+        {
+            SavedFrequencies[i].count = 0;
+        }
+    }
+
+    return true;
+}
+//
+// TestFreq
+// Test whether a frequency is banned or not
+//
+bool IsBannedFreq (long *freq_current)
+{
+    int i;
+    for (i = 0; i < BannedFreq_Max; i++)
+    {
+        if (*freq_current >= (BannedFrequencies[i].freq - g_ban_tollerance) &&
+            *freq_current <  (BannedFrequencies[i].freq + g_ban_tollerance)   )
+        {
+            // scanning 
+            *freq_current+= (g_ban_tollerance * 2); // avoid jumping neearby a carrier
+            // round up to next near tenth of khz  145892125 -> 145900000
+            *freq_current = ceil( *freq_current / 10000.0 ) * 10000.0;             
+            return true;
+        }        
+    }    
+    if (i >= BannedFreq_Max)
+        return false;
+}
+
 //
 // AdjustFrequency
 // Fine tuning to reach max level
@@ -557,7 +638,9 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
     // minimum hit threshold on frequency already seen (count): above this the freq is a candidate 
     int min_hit_threshold = 2;
     // maximum miss threshold on frequencies not seen anymore: above this the candidate count is decremented
-    int max_miss_threshold = 10;  
+    // note: during monitoring on active freq the counter can reach high values so this threshold should not be too high
+    // otherwise the chance to exclude the freq is very low and will continue to monitor even after prolonged inactive time
+    int max_miss_threshold = 20; 
     long sleep_cyle         = 10000 ; // wait 50ms after setting freq to get signal level 
     long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
     long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
@@ -566,6 +649,7 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
 
     while (true)
     {
+        IsBannedFreq(&current_freq); // test and change current_frequency to next available slot; 
         SetFreq(sockfd, current_freq);
         if (saved_cycle)
             usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
@@ -648,7 +732,7 @@ int main(int argc, char **argv) {
     char buf[BUFSIZE];
 
     FILE *bookmarksfd;
-
+#if 0
     /* check command line arguments */
     if (argc != 3) {
        fprintf(stderr,"usage: %s <hostname> <port>\n", argv[0]);
@@ -656,18 +740,24 @@ int main(int argc, char **argv) {
     }
     hostname = argv[1];
     portno = atoi(argv[2]);
+#endif
+    hostname = (char *) g_hostname;
+    portno   = g_portno;
+
 
     sockfd = Connect(hostname, portno);
 
     bookmarksfd = Open("~/.config/gqrx/bookmarks.csv");
     ReadFrequencies (bookmarksfd);
     
-    bzero(SavedFrequencies, sizeof(SavedFrequencies));
-
 
     long freq_min =  430000000;
     long freq_max =  431600000;
 
+    long current_freq;
+    GetCurrentFreq(sockfd, &current_freq);
+    freq_min = current_freq - g_freq_delta;
+    freq_max = current_freq + g_freq_delta;
 
     //ScanBookmarkedFrequenciesInRange(sockfd, freq_min, freq_max);
     ScanFrequenciesInRange(sockfd, freq_min, freq_max, 10000);

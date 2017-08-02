@@ -21,12 +21,21 @@ The sweep is performed fast (well, as fast as it can). On signal detection a fin
 * Frequency range constrained scan (also for bookmarks)
 * Fast sweep scan with adaptive monitor of the most active stations 
 * Adaptive Frequency Locking in sweep mode
+* Interactive monitor to skip or ban a frequency manually
 
 ## Notes
 It is advisable to disable AGC during the scan: adjust the fixed gain lowering the noise floor to at least -60/-70 dBFS and set the squelch level to -50/-40 dBFS, depending on the band activities and noise levels.
 The best results are obtained in relative quiet frequencies with sporadic transmissions. If the band is cluttered with armonics and other types of persistent noise, avoid the sweep scan and use the bookmarks mode with a higher squelch level. 
 
 In sweep mode use a limited bandwidth of about 2 MHz in order to avoid VFO and noise floor levels chainging during the sweep.   
+
+# Interactive Commands 
+This manual commands are available during scan:
+<pre>
+<space> OR <enter>  :     Skips a locked frequency (listening to the next).
+'b'                 :     Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq.  
+</pre>
+
 
 ## TODOs
 * tags matching filters (only bookmarked frequencies with specified tag) 
