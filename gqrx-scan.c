@@ -34,7 +34,7 @@
 // Globals
 //
 typedef struct {
-    long freq; // frequency in Mhz
+    freq_t freq; // frequency in Mhz
     int count; // hit count on sweep scan
     int miss;  // miss count on sweep scan
     char descr[BUFSIZE]; // ugly buffer for descriptions: TODO convert it in a pointer
@@ -51,23 +51,55 @@ int  SavedFreq_Max = 0;
 FREQ BannedFrequencies[SAVED_FREQ_MAX] = {0};
 int  BannedFreq_Max = 0;
 
+static char freq_string[BUFSIZE] = {0};
+
 //
 // Defaults
 //
 const char      *g_hostname     = "localhost";
 const int       g_portno        = 7356;
-const long      g_freq_delta    = 1000000; // +- Mhz Bandwidth to scan from current freq. 
-const long      g_ban_tollerance    = 10000; // +- Khz bandwidth to ban from current freq.
+const freq_t      g_freq_delta    = 1000000; // +- Mhz Bandwidth to scan from current freq. 
+const freq_t      g_ban_tollerance    = 10000; // +- Khz bandwidth to ban from current freq.
 
 //
 // Local Prototypes
 //
-bool BanFreq (long freq_current);
+bool BanFreq (freq_t freq_current);
 void ClearAllBans ( void );
 
 //
 // Utilities
 //
+
+// return a statically allocated string of the freq.
+char * print_freq (freq_t freq)
+{
+    // fist round up to khz
+    freq = round ( freq / 1000.0 ) * 1000.0; 
+    long Ghz = freq/1000000000;
+    long Mhz = (freq/1000000)%1000;
+    long Khz = (freq/1000)%1000;
+
+    freq_string[0] = '\0';
+    char temp[256];
+    if (Ghz)
+    {
+        sprintf (temp, "%ld.%3.3ld.%3.3ld GHz", Ghz, Mhz, Khz);
+        strcat(freq_string, temp);
+        return freq_string;
+    }
+    if (Mhz)
+    {
+        sprintf (temp, "%ld.%3.3ld MHz", Mhz, Khz);
+        strcat(freq_string, temp);
+        return freq_string;
+    }
+
+    sprintf (temp, "%ld KHz", Khz);
+    strcat(freq_string, temp);
+    return freq_string;
+}
+
 int kbhit(void)
 {
     struct timeval tv;
@@ -159,7 +191,7 @@ time_t DiffTime(char *timestamp, time_t start_time)
 // Waits for user input or a delay after the carrier is gone
 // Returns if the user has pressed <space> or <enter> to skip frequency
 //
-bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
+bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 {
     double    squelch;
     double  level;
@@ -308,7 +340,7 @@ bool ReadFrequencies (FILE *bookmarksfd)
         if (start)
         {
             char * token = strtok(line, "; "); // freq
-            sscanf(token, "%ld", &Frequencies[i].freq);
+            sscanf(token, "%llu", &Frequencies[i].freq);
             token = strtok(NULL, ";"); // descr
             strncpy(Frequencies[i].descr, token , BUFSIZE);
             token = strtok(NULL, ";"); // mode
@@ -326,7 +358,7 @@ bool ReadFrequencies (FILE *bookmarksfd)
                 tag = strtok (NULL, ",\n");
             }
 
-            printf(":%ld: %s\n", Frequencies[i].freq, Frequencies[i].descr);
+            printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr);
             i++;
         }
     }
@@ -335,16 +367,16 @@ bool ReadFrequencies (FILE *bookmarksfd)
 }
 
 
-bool ScanBookmarkedFrequenciesInRange(int sockfd, long freq_min, long freq_max)
+bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max)
 {
-    long freq = 0;
+    freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
     double level = 0;
     GetSignalLevel(sockfd, &level );
     double squelch = 0;
     GetSquelchLevel(sockfd, &squelch);
 
-    long current_freq = freq_min;
+    freq_t current_freq = freq_min;
 
     SetFreq(sockfd, freq_min);
     bool skip = false;
@@ -367,7 +399,9 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, long freq_min, long freq_max)
                     if (level >= squelch)
                     {
                         time_t hit_time = GetTimeStamp(timestamp);
-                        printf ("%s - Freq: %ld MHz active [%s], Level:%.2f/%.2f ", timestamp, current_freq, Frequencies[i].descr, level, squelch);
+                        printf ("[%s] Freq: %s active [%s], Level: %.2f/%.2f ", 
+                                timestamp, print_freq(current_freq), 
+                                Frequencies[i].descr, level, squelch);
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
@@ -387,13 +421,13 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, long freq_min, long freq_max)
 //
 // Save frequency found
 //
-bool SaveFreq(long freq_current)
+bool SaveFreq(freq_t freq_current)
 {
     bool found = false;
-    long tollerance = 5000; // 10Khz bwd
+    freq_t tollerance = 5000; // 10Khz bwd
 
     int  temp_count = 0;
-    long delta, temp_delta = tollerance;
+    freq_t delta, temp_delta = tollerance;
     int  temp_i     = 0;
 
     for (int i = 0; i < SavedFreq_Max; i++)
@@ -428,7 +462,7 @@ bool SaveFreq(long freq_current)
 
     // calculate a better one for the next time
     int count = temp_count;
-    SavedFrequencies[temp_i].freq = (( ((long long)SavedFrequencies[temp_i].freq * count ) + freq_current ) / (count + 1));
+    SavedFrequencies[temp_i].freq = (( ((freq_t)SavedFrequencies[temp_i].freq * count ) + freq_current ) / (count + 1));
     SavedFrequencies[temp_i].count++;
     SavedFrequencies[temp_i].miss = 0;// reset miss count
     
@@ -439,7 +473,7 @@ bool SaveFreq(long freq_current)
 //
 // Ban a frequency found 
 //
-bool BanFreq (long freq_current)
+bool BanFreq (freq_t freq_current)
 {
     int i = BannedFreq_Max;
     if (i >= SAVED_FREQ_MAX)
@@ -472,7 +506,7 @@ void ClearAllBans ( void )
 // IsBannedFreq
 // Test whether a frequency is banned or not
 //
-bool IsBannedFreq (long *freq_current)
+bool IsBannedFreq (freq_t *freq_current)
 {
     int i;
     for (i = 0; i < BannedFreq_Max; i++)
@@ -498,13 +532,13 @@ bool IsBannedFreq (long *freq_current)
 // Perform a sweep between -15+15Khz around current_freq with 5kHz steps
 // Return the found frequency
 //
-long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
+freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
 {
-    long freq_min   = current_freq - 10000;
-    long freq_max   = current_freq + 10000;
-    long freq_steps = freq_interval;
+    freq_t freq_min   = current_freq - 10000;
+    freq_t freq_max   = current_freq + 10000;
+    freq_t freq_steps = freq_interval;
     long max_levels = (freq_max - freq_min) / freq_steps ;
-    typedef struct { double level; long freq; } LEVELS;
+    typedef struct { double level; freq_t freq; } LEVELS;
     LEVELS levels[max_levels];
     int    l = 0;
     double squelch = 0;
@@ -545,7 +579,7 @@ long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
    
     // before second pass fine tuning we check if the frequency is already known (and tuned with a mean value computed)
     // See SaveFreq
-    long tollerance = 7000;
+    freq_t tollerance = 7000;
     bool found = false;
     for (int i = 0; i < SavedFreq_Max; i++)
     {
@@ -575,7 +609,7 @@ long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
     // (hopefully this reduces the num of steps), tries to average out spikes, 3 sample
     double reference_level;
     GetSignalLevelEx( sockfd, &reference_level, 3);       
-    long   reference_freq  = current_freq;
+    freq_t   reference_freq  = current_freq;
     freq_min   = current_freq - 5000;
     freq_max   = current_freq + 5000;
     freq_steps = 1000; // 1 Khz fine tuning 
@@ -649,21 +683,21 @@ long AdjustFrequency(int sockfd, long current_freq, long freq_interval)
 
 }
 
-bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_interval)
+bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval)
 {
-    long freq = 0;
+    freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
     double level = 0;
     GetSignalLevel(sockfd, &level );
     double squelch = 0;
     GetSquelchLevel(sockfd, &squelch);
 
-    long current_freq = freq_min;
+    freq_t current_freq = freq_min;
 
     SetFreq(sockfd, freq_min);
     int saved_idx = 0, current_saved_idx = 0;
     int sweep_count = 0;
-    long last_freq;
+    freq_t last_freq;
     bool saved_cycle = false;
     // minimum hit threshold on frequency already seen (count): above this the freq is a candidate 
     int min_hit_threshold = 2;
@@ -693,7 +727,9 @@ bool ScanFrequenciesInRange(int sockfd, long freq_min, long freq_max, long freq_
             current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
             SaveFreq(current_freq);    
             time_t hit_time = GetTimeStamp(timestamp);
-            printf ("%s - Freq: %ld MHz active, Level:%.2f/%.2f ", timestamp, current_freq, level, squelch);
+            printf ("[%s] Freq: %s active, Level: %.2f/%.2f ", 
+                    timestamp, print_freq(current_freq), 
+                    level, squelch);
             fflush(stdout);
             // Wait user input or delay time after signal lost
             skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
@@ -774,17 +810,16 @@ int main(int argc, char **argv) {
     hostname = (char *) g_hostname;
     portno   = g_portno;
 
-
     sockfd = Connect(hostname, portno);
 
     bookmarksfd = Open("~/.config/gqrx/bookmarks.csv");
     ReadFrequencies (bookmarksfd);
     
 
-    long freq_min =  430000000;
-    long freq_max =  431600000;
+    freq_t freq_min =  430000000;
+    freq_t freq_max =  431600000;
 
-    long current_freq;
+    freq_t current_freq;
     GetCurrentFreq(sockfd, &current_freq);
     freq_min = current_freq - g_freq_delta;
     freq_max = current_freq + g_freq_delta;

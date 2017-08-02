@@ -89,7 +89,7 @@ bool Recv(int sockfd, char *buf)
 //
 // GQRX Protocol
 //
-bool GetCurrentFreq(int sockfd, long *freq)
+bool GetCurrentFreq(int sockfd, freq_t *freq)
 {
     char buf[BUFSIZE];
     
@@ -99,21 +99,21 @@ bool GetCurrentFreq(int sockfd, long *freq)
     if (strcmp(buf, "RPRT 1") == 0 )
         return false;
     
-    sscanf(buf, "%ld", freq);
+    sscanf(buf, "%llu", freq);
     return true;
 }
-bool SetFreq(int sockfd, long freq)
+bool SetFreq(int sockfd, freq_t freq)
 {
     char buf[BUFSIZE];
     
-    sprintf (buf, "F %ld\n", freq);
+    sprintf (buf, "F %llu\n", freq);
     Send(sockfd, buf);
     Recv(sockfd, buf);
 
     if (strcmp(buf, "RPRT 1") == 0 )
         return false;
     
-    long freq_current = 0;
+    freq_t freq_current = 0;
     do
     {
         GetCurrentFreq(sockfd, &freq_current);

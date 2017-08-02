@@ -6,7 +6,7 @@
 #define SAVED_FREQ_MAX  1000
 #define TAG_MAX         100
 
-
+typedef unsigned long long freq_t;
 
 
 // 
@@ -32,8 +32,8 @@ bool Recv(int sockfd, char *buf);
 //
 // GQRX Protocol
 //
-bool GetCurrentFreq(int sockfd, long *freq);
-bool SetFreq(int sockfd, long freq);
+bool GetCurrentFreq(int sockfd, freq_t *freq);
+bool SetFreq(int sockfd, freq_t freq);
 bool GetSignalLevel(int sockfd, double *dBFS);
 bool GetSquelchLevel(int sockfd, double *dBFS);
 bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp);
