@@ -10,7 +10,7 @@ This repository is not ready yet. I have to complete parsing options and so fort
 
 A simple scanner written in C that uses gqrx remote protocol to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks to look for already stored frequencies or, in a free sweep scan mode, to explore the band within a specified frequency range. 
 
-The sweep scan uses an adaptive algorithm to remember active frequencies during the sweep that prioritizes active stations without stopping the search for new ones. 
+The sweep scan uses an adaptive algorithm to remember active frequencies during the sweep that prioritizes active stations without stop searching for the new ones. 
 
 Gqrx Squelch level is used as the threshold, when the signal is strong enough it stops the scanner that in turn adjusts the frequency to the nearest carrier seen.   
 
@@ -29,10 +29,10 @@ The best results are obtained in relative quiet frequencies with sporadic transm
 
 In sweep mode use a limited bandwidth of about 2 MHz in order to avoid VFO and noise floor levels chainging during the sweep.   
 
-# Interactive Commands 
+## Interactive Commands 
 This manual commands are available during scan:
 <pre>
-<space> OR <enter>  :     Skips a locked frequency (listening to the next).
+[space] OR [enter]  :     Skips a locked frequency (listening to the next).
 'b'                 :     Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq.  
 </pre>
 
