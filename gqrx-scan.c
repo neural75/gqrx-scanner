@@ -63,6 +63,7 @@ const long      g_ban_tollerance    = 10000; // +- Khz bandwidth to ban from cur
 // Local Prototypes
 //
 bool BanFreq (long freq_current);
+void ClearAllBans ( void );
 
 //
 // Utilities
@@ -166,6 +167,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
     int     exit = 0;
     char    c;
     bool    skip = false;
+    bool    pause = false;
     
     __fpurge(stdin);
     nonblock(NB_ENABLE);
@@ -194,11 +196,30 @@ bool WaitUserInputOrDelay (int sockfd, long delay, long *current_freq)
                 skip = true;
                 break;
             }
+            else if (c == 'c')
+            {
+                // Clear all bans
+                ClearAllBans();
+                exit = 0;
+            }
+            else if (c == 'p')
+            {
+                // pause until another 'p'
+                pause ^= true; // switch pause mode 
+                exit = 0;
+            }
             else
             {
                 exit = 0;
             }
         }
+
+        if (pause)
+        {
+            usleep (sleep);
+            continue;
+        }
+
         // exit = 0
         if (level < squelch )
         {
@@ -440,7 +461,15 @@ bool BanFreq (long freq_current)
     return true;
 }
 //
-// TestFreq
+// ClearAllBans
+//
+void ClearAllBans ( void )
+{
+    BannedFreq_Max = 0; // quick and dirty
+}
+
+//
+// IsBannedFreq
 // Test whether a frequency is banned or not
 //
 bool IsBannedFreq (long *freq_current)
@@ -454,7 +483,8 @@ bool IsBannedFreq (long *freq_current)
             // scanning 
             *freq_current+= (g_ban_tollerance * 2); // avoid jumping neearby a carrier
             // round up to next near tenth of khz  145892125 -> 145900000
-            *freq_current = ceil( *freq_current / 10000.0 ) * 10000.0;             
+            *freq_current = ceil( *freq_current / 10000.0 ) * 10000.0;      
+            IsBannedFreq (freq_current);       
             return true;
         }        
     }    

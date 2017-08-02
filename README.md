@@ -32,8 +32,10 @@ In sweep mode use a limited bandwidth of about 2 MHz in order to avoid VFO and n
 ## Interactive Commands 
 This manual commands are available during scan:
 <pre>
-[space] OR [enter]  :     Skips a locked frequency (listening to the next).
-'b'                 :     Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq.  
+[space] OR [enter]  :   Skips a locked frequency (listening to the next).
+'b'                 :   Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq. 
+'c'                 :   Clears all banned frequencies.
+'p'                 :   Pauses scan on locked frequency, 'p' again to unpause. 
 </pre>
 
 
