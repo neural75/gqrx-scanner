@@ -56,11 +56,13 @@ static char freq_string[BUFSIZE] = {0};
 //
 // Defaults
 //
-const char      *g_hostname     = "localhost";
-const int       g_portno        = 7356;
-const freq_t      g_freq_delta    = 1000000; // +- Mhz Bandwidth to scan from current freq. 
-const freq_t      g_ban_tollerance    = 10000; // +- Khz bandwidth to ban from current freq.
+const char      *g_hostname         = "localhost";
+const int       g_portno            = 7356;
+const freq_t    g_freq_delta        = 1000000; // +- Mhz Bandwidth to scan from current freq. 
+const freq_t    g_ban_tollerance    = 10000; // +- Khz bandwidth to ban from current freq.
 
+// only for debug
+const bool      verbose             = true;
 //
 // Local Prototypes
 //
@@ -352,13 +354,13 @@ bool ReadFrequencies (FILE *bookmarksfd)
             while (tag != NULL && k < TAG_MAX)
             {
                 sscanf (tag, "%ms", &Frequencies[i].tags[k]);
-                printf("%s ", Frequencies[i].tags[k]);
+                //printf("%s ", Frequencies[i].tags[k]);
 
                 k++;
                 tag = strtok (NULL, ",\n");
             }
 
-            printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr);
+            //printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr);
             i++;
         }
     }
@@ -524,6 +526,25 @@ bool IsBannedFreq (freq_t *freq_current)
     }    
     if (i >= BannedFreq_Max)
         return false;
+}
+
+
+//
+// Debounce
+//
+bool Debounce (int sockfd, freq_t current_freq, double level)
+{
+    double current_level = level;
+    double squelch;
+    usleep(300000); // 300 ms wait, hope it's good enough
+    GetSignalLevelEx( sockfd, &current_level, 3 );
+    GetSquelchLevel ( sockfd, &squelch );
+
+    if (current_level < squelch )
+        return false; // signal lost or ghost
+    else    
+        return true;
+
 }
 
 //
@@ -724,18 +745,48 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
         GetSignalLevelEx(sockfd, &level, 3 );
         if (level >= squelch)
         {
+            // we have a possible match, but sometimes level oscillates after a squelch miss
+            bool still_good = Debounce(sockfd, current_freq, level);
+            if (!still_good)
+            {
+                // Signal lost
+                // could be ghosts because we are running too fast, slow down a bit
+                sleep_cyle+= 1000; // add penality
+                if (sleep_cyle > 30000)
+                    sleep_cyle = 30000;
+                if (verbose)
+                {
+                    printf("Missing signals. Slowing down: %ld ms wait time.\n", sleep_cyle/1000);
+                    fflush (stdout);
+                }
+                // tries to recover to get back the signal, check our steps...
+                if (!saved_cycle)
+                {
+                    current_freq-=(freq_interval * 3);
+                    if (current_freq < freq_min)
+                        current_freq = freq_max - (freq_interval * 3);                    
+                }
+                continue; 
+            }
             current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
-            SaveFreq(current_freq);    
-            time_t hit_time = GetTimeStamp(timestamp);
-            printf ("[%s] Freq: %s active, Level: %.2f/%.2f ", 
-                    timestamp, print_freq(current_freq), 
-                    level, squelch);
-            fflush(stdout);
-            // Wait user input or delay time after signal lost
-            skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
-            time_t elapsed = DiffTime(timestamp, hit_time);
-            printf (" [elapsed time %s]\n", timestamp);
-            fflush(stdout);
+            if (IsBannedFreq(&current_freq))
+            {
+                skip = true;
+            }
+            else
+            {
+                SaveFreq(current_freq);    
+                time_t hit_time = GetTimeStamp(timestamp);
+                printf ("[%s] Freq: %s active, Level: %.2f/%.2f ", 
+                        timestamp, print_freq(current_freq), 
+                        level, squelch);
+                fflush(stdout);
+                // Wait user input or delay time after signal lost
+                skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
+                time_t elapsed = DiffTime(timestamp, hit_time);
+                printf (" [elapsed time %s]\n", timestamp);
+                fflush(stdout);
+            }
         }
         else
         {
@@ -773,6 +824,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 sweep_count = 0; // reactivates sweep scan
                 saved_cycle = false;
                 current_freq = last_freq;
+                current_freq = ceil( current_freq / 10000.0 ) * 10000.0; 
             }
             else // found one
             {
