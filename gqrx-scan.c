@@ -240,37 +240,43 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         if (exit !=  0)
         {
             c = fgetc(stdin);
-            // <space> or <enter> ?
-            if ( (c == ' ') || (c == '\n') )
+            switch (c)
             {
-                exit = 1; // exit
-                skip = true;
-                break; 
+                case ' ':
+                case '\n':
+                {
+                    exit = 1; // exit
+                    skip = true;
+                    break; 
+                }
+                case 'b':
+                {
+                    // Ban a frequency
+                    BanFreq(*current_freq);
+                    exit = 1;
+                    skip = true;
+                    break;
+                }
+                case 'c':
+                {
+                    // Clear all bans
+                    ClearAllBans();
+                    exit = 0;
+                    break;
+                }
+                case 'p':
+                {
+                    // pause until another 'p'
+                    pause ^= true; // switch pause mode 
+                    exit = 0;
+                    break;
+                }
+                default:
+                    exit = 0;
+                
             }
-            else if ( c == 'b' )
-            {
-                // Ban a frequency
-                BanFreq(*current_freq);
-                exit = 1;
-                skip = true;
+            if (exit == 1)
                 break;
-            }
-            else if (c == 'c')
-            {
-                // Clear all bans
-                ClearAllBans();
-                exit = 0;
-            }
-            else if (c == 'p')
-            {
-                // pause until another 'p'
-                pause ^= true; // switch pause mode 
-                exit = 0;
-            }
-            else
-            {
-                exit = 0;
-            }
         }
 
         if (pause)
@@ -751,11 +757,13 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
     // note: during monitoring on active freq the counter can reach high values so this threshold should not be too high
     // otherwise the chance to exclude the freq is very low and will continue to monitor even after prolonged inactive time
     int max_miss_threshold = 20; 
-    long sleep_cyle         = 10000 ; // wait 50ms after setting freq to get signal level 
+    long sleep_cyle         = 10000 ; // wait 10ms after setting freq to get signal level 
     long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
     long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
     bool skip = false;   // user input
     char timestamp[BUFSIZE] = {0};
+    int  success_counter    = 0;  // number of correctly acquired signals, reset on bad signals or reaching success_factor
+    int  success_factor     = 5; // improving sleep cycle every success_factor of times   
 
     while (true)
     {
@@ -775,13 +783,14 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             if (!still_good)
             {
                 // Signal lost
-                // could be ghosts because we are running too fast, slow down a bit
-                sleep_cyle+= 1000; // add penality
+                // it could be a ghosts signal because we are running too fast, slow down a bit
+                success_counter = 0; // stop incrementing sleep cycle for a while
+                sleep_cyle+= 1000;   // add penality
                 if (sleep_cyle > 30000)
                     sleep_cyle = 30000;
                 if (verbose)
                 {
-                    printf("Missing signals. Slowing down: %ld ms wait time.\n", sleep_cyle/1000);
+                    printf("Missing signal. Slowing down: %ld ms wait time.\n", sleep_cyle/1000);
                     fflush (stdout);
                 }
                 // tries to recover to get back the signal, check our steps...
@@ -792,6 +801,26 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                         current_freq = freq_max - (freq_interval * 3);                    
                 }
                 continue; 
+            }
+            else
+            {
+                // Frequency acquired successfully
+                // Or.. we could have jumped on another frequency with a valid signal nearby. 
+                success_counter++;
+                if (success_counter > success_factor) 
+                {
+                    // Increase speed a little bit in order to compensates signal lost because of bad luck 
+                    // while we moved the frequency (signal disappearing)
+                    sleep_cyle-= 1000; // add a reward
+                    if (sleep_cyle < 10000)
+                        sleep_cyle = 10000;
+                    if (verbose)
+                    {
+                        printf("Signals acquired successfully. Speeding up: %ld ms wait time.\n", sleep_cyle/1000);
+                        fflush (stdout);
+                    }
+                    success_counter = 0; // stop decrementing sleep cycle for a while
+                }
             }
             current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
             if (IsBannedFreq(&current_freq))
