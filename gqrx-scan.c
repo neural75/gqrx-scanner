@@ -27,9 +27,11 @@ SOFTWARE.
  * gqrx-scanner
  * A simple frequency scanner for gqrx
  * 
- * usage: gqrx-scanner [-h|--host <host>] [-p|--port <port>] [-b|--bookmarks] [-s|--sweep] 
- *                  [-f <central frequency>] [-f <from freq>] [-t <to freq>]
- *                  [-d|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
+ * usage: gqrx-scanner [-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>] 
+ *                  [-f <central frequency>] [--min <from freq>] [--max <to freq>]
+ *                  [-d|--delay <lingering time on signals>]
+ *                  [-t|--tags <"tag1|tag2|...">]       
+ *                  [-x|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
  */
 #include <stdio.h>
 #include <stdio_ext.h>
@@ -67,6 +69,9 @@ typedef struct {
 }FREQ;
 
 
+//
+// Stores
+//
 FREQ Frequencies[FREQ_MAX] = {0};
 int  Frequencies_Max = 0;
 
@@ -83,11 +88,12 @@ static char freq_string[BUFSIZE] = {0};
 //
 const char      *g_hostname         = "localhost";
 const int       g_portno            = 7356;
-const freq_t    g_freq_delta        = 1000000; // +- Mhz Bandwidth to scan from current freq. 
-const freq_t    g_ban_tollerance    = 10000; // +- Khz bandwidth to ban from current freq.
+const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq. 
+const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
 
 // only for debug
 const bool      verbose             = true;
+
 //
 // Local Prototypes
 //
@@ -97,8 +103,7 @@ void ClearAllBans ( void );
 //
 // Utilities
 //
-
-// return a statically allocated string of the freq.
+// return a statically allocated string of the freq to be printed out.
 char * print_freq (freq_t freq)
 {
     // fist round up to khz
@@ -127,6 +132,10 @@ char * print_freq (freq_t freq)
     return freq_string;
 }
 
+
+//
+// Wait a key press
+//
 int kbhit(void)
 {
     struct timeval tv;
@@ -164,10 +173,10 @@ void nonblock(int state)
     tcsetattr(STDIN_FILENO, TCSANOW, &ttystate);
 }
 //
-// GetTimeStamp
+// GetTime
 // Get the time stamp dd-mm-yy hh:mm:ss
 //
-time_t GetTimeStamp(char *timestamp)
+time_t GetTime(char *timestamp)
 {
     time_t etime = time(NULL);
     struct tm *ltime = localtime (&etime);
@@ -431,7 +440,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     GetSignalLevelEx(sockfd, &level, 3 );
                     if (level >= squelch)
                     {
-                        time_t hit_time = GetTimeStamp(timestamp);
+                        time_t hit_time = GetTime(timestamp);
                         printf ("[%s] Freq: %s active [%s], Level: %.2f/%.2f ", 
                                 timestamp, print_freq(current_freq), 
                                 Frequencies[i].descr, level, squelch);
@@ -830,7 +839,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             else
             {
                 SaveFreq(current_freq);    
-                time_t hit_time = GetTimeStamp(timestamp);
+                time_t hit_time = GetTime(timestamp);
                 printf ("[%s] Freq: %s active, Level: %.2f/%.2f ", 
                         timestamp, print_freq(current_freq), 
                         level, squelch);
