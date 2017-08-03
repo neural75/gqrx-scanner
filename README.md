@@ -55,7 +55,7 @@ These keyboard shortcuts are available during scan:
 * parsable output in csv?
 
 
-## Build
+## Build and Install
 <pre>
 cmake .
 make
