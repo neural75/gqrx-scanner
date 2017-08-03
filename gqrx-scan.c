@@ -24,10 +24,10 @@ SOFTWARE.
 
 
 /* 
- * gqrx-scan
+ * gqrx-scanner
  * A simple frequency scanner for gqrx
  * 
- * usage: gqrx-scan [-h|--host <host>] [-p|--port <port>] [-b|--bookmarks] [-s|--sweep] 
+ * usage: gqrx-scanner [-h|--host <host>] [-p|--port <port>] [-b|--bookmarks] [-s|--sweep] 
  *                  [-f <central frequency>] [-f <from freq>] [-t <to freq>]
  *                  [-d|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
  */
