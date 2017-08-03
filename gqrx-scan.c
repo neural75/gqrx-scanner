@@ -28,7 +28,7 @@ SOFTWARE.
  * A simple frequency scanner for gqrx
  * 
  * usage: gqrx-scanner [-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>] 
- *                  [-f <central frequency>] [--min <from freq>] [--max <to freq>]
+ *                  [-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
  *                  [-d|--delay <lingering time on signals>]
  *                  [-t|--tags <"tag1|tag2|...">]       
  *                  [-x|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
@@ -51,6 +51,7 @@ SOFTWARE.
 #include <linux/limits.h>
 #include <termios.h>
 #include <time.h>
+#include <getopt.h>
 
 #include "gqrx-prot.h"
 
@@ -58,7 +59,7 @@ SOFTWARE.
 #define NB_DISABLE   false
 
 //
-// Globals
+// Globals definitions
 //
 typedef struct {
     freq_t freq; // frequency in Mhz
@@ -68,10 +69,13 @@ typedef struct {
     char *tags[TAG_MAX]; // tags 
 }FREQ;
 
+typedef enum
+{
+    sweep,
+    bookmark
+} SCAN_MODE;
 
-//
 // Stores
-//
 FREQ Frequencies[FREQ_MAX] = {0};
 int  Frequencies_Max = 0;
 
@@ -83,22 +87,272 @@ int  BannedFreq_Max = 0;
 
 static char freq_string[BUFSIZE] = {0};
 
+
 //
 // Defaults
 //
-const char      *g_hostname         = "localhost";
+const char     *g_hostname          = "localhost";
 const int       g_portno            = 7356;
 const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq. 
+const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
+const long      g_delay             = 2000000; // 2 sec
+const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
 
+//
+// Input options
+//
+char           *opt_hostname = NULL;
+int             opt_port = 0;
+freq_t          opt_freq = 0;
+freq_t          opt_min_freq = 0;
+freq_t          opt_max_freq = 0;
+long            opt_delay = 0;  
+SCAN_MODE       opt_scan_mode = sweep;
+char           *opt_tags[TAG_MAX] = {0};
+bool            opt_disable_store = false;
 // only for debug
-const bool      verbose             = true;
+bool            opt_verbose = false;
+
 
 //
 // Local Prototypes
 //
 bool BanFreq (freq_t freq_current);
 void ClearAllBans ( void );
+
+//
+// ParseInputOptions 
+//
+void print_usage ( char *name )
+{
+
+    printf ("Usage:\n");
+    printf ("%s\t[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]\n", name);
+    printf ("\t\t[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]\n");
+    printf ("\t\t[-d|--delay <lingering time in seconds>]\n");
+    printf ("\t\t[-t|--tags <\"tag1|tag2|...\">]\n");
+    printf ("\t\t[-v|--verbose]\n");
+    printf ("\n");
+    printf ("-h, --host <host>            Name of the host to connect. Default: localhost\n");
+    printf ("-p, --port <port>            The number of the port to connect. Default: 7356\n");
+    printf ("-m, --mode <mode>            Scan mode to be used. Default: sweep\n");
+    printf ("                               Possible values for <mode>: sweep, bookmark\n");
+    printf ("-f, --freq <freq>            Frequency to scan. Default is the current frequency tuned in Gqrx\n");
+    printf ("                               with a range of +- 1MHz. Incompatible with -b, -e\n");
+    printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
+    printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
+    printf ("-d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2\n");
+    printf ("-t, --tags <\"tags\">          Filters signals in bookmark scan only for the ones tagged with \"tags\"\n");
+    printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
+    printf ("                               Supported only with -m bookmark scan mode\n");
+    //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]
+    printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
+    printf ("--help                       This help message.\n");    
+    printf ("\n");
+    printf ("Examples:\n");
+    printf ("%s -m bookmark --min 430000000 --max 431000000 --tags \"DMR|Radio Links\"\n", name);
+    printf ("\tPerforms a scan using Gqrx bookmarks, monitoring only the frequencies\n");
+    printf ("\ttagged with \"DMR\" or \"Radio Links\" in the range 430MHz-431MHz\n");
+    printf ("%s --min 430000000 --max 431000000 -d 3\n", name);
+    printf ("\tPerforms a sweep scan from frequency 430MHz to 431MHz, using a delay of \n");
+    printf ("\t3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires\n");
+    printf ("\n");
+    printf ("Full documentation available at <https://github.com/neural75/gqrx-scanner>\n");
+
+    exit (EXIT_FAILURE);
+}
+
+bool ParseTags (char *tags)
+{
+    int len = strlen (tags);
+    char *tag = NULL;
+
+
+    tag = strtok (tags, "|");
+    int k = 0;
+    while (tag != NULL && k < TAG_MAX)
+    {
+        sscanf (tag, "%ms", &opt_tags[k]); // allocate output
+        tag = strtok(NULL, "|");
+        k++;
+    }
+    if (k == 0) // wtf
+    {
+        printf ("Error: -t option requires a '|' separator for list of tags.\n");
+        return false;
+    }    
+    return true;
+}
+
+bool ParseInputOptions (int argc, char **argv)
+{
+  int c;
+
+  while (1)
+    {
+      static struct option long_options[] =
+        {
+          /* These options set a flag. */
+          //{"verbose", no_argument,       &opt_verbose, 1},
+          /* These options don’t set a flag.
+             We distinguish them by their indices. */
+          {"verbose", no_argument,       0, 'v'},
+          {"help",    no_argument,       0, 'w'},
+          {"host",    required_argument, 0, 'h'},
+          {"port",    required_argument, 0, 'p'},
+          {"mode",    required_argument, 0, 'm'},
+          {"freq",    required_argument, 0, 'f'},
+          {"min",     required_argument, 0, 'b'},
+          {"max",     required_argument, 0, 'e'},
+          {"tags",    required_argument, 0, 't'},
+          {"delay",   required_argument, 0, 'd'},          
+          {0, 0, 0, 0}
+        };
+        /* getopt_long stores the option index here. */
+        int option_index = 0;
+
+        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v",
+                        long_options, &option_index);
+
+        // warning: I don't know why but required argument are not so "required"
+        //          if a following option is encountered getopt_long returns this option as the argument in optarg 
+        //          instead of error, but if there is only one option with a missing arg then it returns an error.
+        //          
+
+        /* Detect the end of the options. */
+        if (c == -1)
+        break;
+
+        switch (c)
+        {
+            case 0:
+                /* If this option set a flag, do nothing else now. */
+                if (long_options[option_index].flag != 0)
+                    break;
+                printf ("option %s", long_options[option_index].name);
+                if (optarg)
+                    printf (" with arg %s", optarg);
+                printf ("\n");
+            break;
+            case 'v':
+                opt_verbose = true;
+            break;
+            case 'h':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+                opt_hostname = optarg;
+            break;
+            case 'p':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+            
+                if ((opt_port = atoi (optarg)) == 0)
+                {
+                    printf("Error: -%c: invalid port\n", c);
+                    print_usage(argv[0]);
+                }
+            break;
+            case 'm':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+            
+                if (strcmp (optarg, "sweep") == 0)
+                    opt_scan_mode = sweep;
+                else if (strcmp (optarg, "bookmark") == 0)
+                    opt_scan_mode = bookmark;
+                else
+                {
+                    printf ("Error: -m, --mode <mode>. Mode not recognized. \n");
+                    print_usage(argv[0]);
+                }
+            break;
+            case 'f':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+            
+                if ((opt_freq = atoll(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid frequency\n", c);
+                    print_usage(argv[0]);                    
+                }
+                opt_min_freq = opt_freq - g_freq_delta;
+                opt_max_freq = opt_freq + g_freq_delta;
+            break;
+            case 'b':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+
+                if ((opt_min_freq = atoll(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid frequency\n", c);
+                    print_usage(argv[0]);                    
+                }
+                
+            break;
+            case 'e':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+            
+                if ((opt_max_freq = atoll(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid frequency\n", c);
+                    print_usage(argv[0]);                    
+                }                
+            break;
+            case 'd':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+            
+                if ((opt_delay = atol(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid delay\n", c);
+                    print_usage(argv[0]);
+                }
+                opt_delay *= 1000000; // in microsec
+            break;
+            case 't':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+            
+                if (!ParseTags(optarg))
+                    print_usage(argv[0]);
+            break;
+            case '?':
+            /* getopt_long already printed an error message. */
+            case ':':
+            default:
+                print_usage(argv[0]);
+        }
+    }    
+}
+
+
+
 
 //
 // Utilities
@@ -328,7 +582,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 //
 // Open
 //
-FILE * Open (char * filename)
+FILE * Open (const char * filename)
 {
     FILE * filefd;
     const char *homedir;
@@ -346,7 +600,7 @@ FILE * Open (char * filename)
 
     filefd = fopen (filename2, "r");
     if (filefd == (FILE *)NULL)
-        error("ERROR opening gqrx bookmark file");
+        error("ERROR opening gqrx bookmarks file");
 
     return filefd;
 }
@@ -445,7 +699,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                                 timestamp, print_freq(current_freq), 
                                 Frequencies[i].descr, level, squelch);
                         fflush(stdout);
-                        skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
+                        skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
                         printf (" [elapsed time %s]\n", timestamp);
                         fflush(stdout);
@@ -797,7 +1051,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 sleep_cyle+= 1000;   // add penality
                 if (sleep_cyle > 30000)
                     sleep_cyle = 30000;
-                if (verbose)
+                if (opt_verbose)
                 {
                     printf("Missing signal. Slowing down: %ld ms wait time.\n", sleep_cyle/1000);
                     fflush (stdout);
@@ -823,7 +1077,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     sleep_cyle-= 1000; // add a reward
                     if (sleep_cyle < 10000)
                         sleep_cyle = 10000;
-                    if (verbose)
+                    if (opt_verbose)
                     {
                         printf("Signals acquired successfully. Speeding up: %ld ms wait time.\n", sleep_cyle/1000);
                         fflush (stdout);
@@ -845,7 +1099,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                         level, squelch);
                 fflush(stdout);
                 // Wait user input or delay time after signal lost
-                skip = WaitUserInputOrDelay(sockfd, 2000000, &current_freq);
+                skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                 time_t elapsed = DiffTime(timestamp, hit_time);
                 printf (" [elapsed time %s]\n", timestamp);
                 fflush(stdout);
@@ -907,41 +1161,43 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 
 }
 
+
+
+
 int main(int argc, char **argv) {
     int sockfd, portno, n;
     char *hostname;
     char buf[BUFSIZE];
-
     FILE *bookmarksfd;
-#if 0
-    /* check command line arguments */
-    if (argc != 3) {
-       fprintf(stderr,"usage: %s <hostname> <port>\n", argv[0]);
-       exit(0);
-    }
-    hostname = argv[1];
-    portno = atoi(argv[2]);
-#endif
-    hostname = (char *) g_hostname;
-    portno   = g_portno;
 
-    sockfd = Connect(hostname, portno);
 
-    bookmarksfd = Open("~/.config/gqrx/bookmarks.csv");
-    ReadFrequencies (bookmarksfd);
+    opt_hostname = (char *) g_hostname;
+    opt_port     = g_portno;
+    opt_delay    = g_delay;
+    ParseInputOptions(argc, argv);
     
 
-    freq_t freq_min =  430000000;
-    freq_t freq_max =  431600000;
+    sockfd = Connect(opt_hostname, opt_port);
 
-    freq_t current_freq;
-    GetCurrentFreq(sockfd, &current_freq);
-    freq_min = current_freq - g_freq_delta;
-    freq_max = current_freq + g_freq_delta;
+    if (opt_min_freq == 0 || opt_max_freq == 0)
+    {
+        freq_t current_freq;
+        GetCurrentFreq(sockfd, &current_freq);
+        opt_min_freq = current_freq - g_freq_delta;
+        opt_max_freq = current_freq + g_freq_delta;
+    }
 
-    //ScanBookmarkedFrequenciesInRange(sockfd, freq_min, freq_max);
-    ScanFrequenciesInRange(sockfd, freq_min, freq_max, 10000);
-
+    bookmarksfd = Open(g_bookmarksfile);
+    ReadFrequencies (bookmarksfd);
+    
+    if (opt_scan_mode == sweep)
+    {
+        ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, g_default_scan_bw);
+    }
+    else
+    {
+        ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq);
+    }
 
     fclose (bookmarksfd);
     close(sockfd);

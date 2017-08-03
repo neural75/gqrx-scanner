@@ -1,12 +1,6 @@
 # gqrx-scanner
 A frequency scanner for [Gqrx Software Defined Radio](http://gqrx.dk/) receiver
 ## Description
-[work in progress]
-
-*Warning*
-
-This repository is not ready yet. I have to complete parsing options and so forth, so please ignore it for now.
-
 
 gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks to look for the already stored frequencies or, in a free sweep scan mode, to explore the band within a specified frequency range. 
 
@@ -36,7 +30,38 @@ You may also consider to adjust FFT options: FFT size and rate (on FFT Settings)
 I have found better result with high fft size (64536) and 17 fps refresh rate, but this depends on your hardware.
 
 ## Command line Options
-TODO
+<pre>
+Usage:
+./gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
+		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
+		[-d|--delay <lingering time in seconds>]
+		[-t|--tags <"tag1|tag2|...">]
+		[-v|--verbose]
+
+-h, --host <host>            Name of the host to connect. Default: localhost
+-p, --port <port>            The number of the port to connect. Default: 7356
+-m, --mode <mode>            Scan mode to be used. Default: sweep
+                               Possible values for <mode>: sweep, bookmark
+-f, --freq <freq>            Frequency to scan. Default is the current frequency tuned in Gqrx
+                               with a range of +- 1MHz. Incompatible with -b, -e
+-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f
+-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
+-d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2
+-t, --tags <"tags">          Filters signals in bookmark scan only for the ones tagged with "tags"
+                               "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
+                               Supported only with -m bookmark scan mode
+-v, --verbose                Output more information during scan (used for debug). Default: false
+--help                       This help message.
+
+Examples:
+./gqrx-scanner -m bookmark --min 430000000 --max 431000000 --tags "DMR|Radio Links"
+	Performs a scan using Gqrx bookmarks, monitoring only the frequencies
+	tagged with "DMR" or "Radio Links" in the range 430MHz-431MHz
+./gqrx-scanner --min 430000000 --max 431000000 -d 3
+	Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of 
+	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires
+
+</pre>
 
 ## Interactive Commands 
 These keyboard shortcuts are available during scan:
