@@ -143,7 +143,7 @@ void print_usage ( char *name )
     printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2\n");
-    printf ("-t, --tags <\"tags\">          Filters signals in bookmark scan only for the ones tagged with \"tags\"\n");
+    printf ("-t, --tags <\"tags\">          Filters signals tagged with \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               Supported only with -m bookmark scan mode\n");
     //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]

@@ -31,6 +31,7 @@ I have found better result with high fft size (64536) and 17 fps refresh rate, b
 
 ## Command line Options
 <pre>
+$ ./gqrx-scanner --help
 Usage:
 ./gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
@@ -47,7 +48,7 @@ Usage:
 -b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f
 -e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
 -d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2
--t, --tags <"tags">          Filters signals in bookmark scan only for the ones tagged with "tags"
+-t, --tags <"tags">          Filters signals tagged with "tags"
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
                                Supported only with -m bookmark scan mode
 -v, --verbose                Output more information during scan (used for debug). Default: false
