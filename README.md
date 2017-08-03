@@ -1,5 +1,5 @@
 # gqrx-scanner
-A frequency scanner for Gqrx Software Defined Radio receiver
+A frequency scanner for [Gqrx Software Defined Radio](http://gqrx.dk/) receiver
 ## Description
 [work in progress]
 
@@ -8,7 +8,7 @@ A frequency scanner for Gqrx Software Defined Radio receiver
 This repository is not ready yet. I have to complete parsing options and so forth, so please ignore it for now.
 
 
-gqrx-scanner is a frequency scanner written in C that uses gqrx remote protocol to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks to look for the already stored frequencies or, in a free sweep scan mode, to explore the band within a specified frequency range. 
+gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks to look for the already stored frequencies or, in a free sweep scan mode, to explore the band within a specified frequency range. 
 
 The sweep scan uses an adaptive algorithm to remember active frequencies during the sweep that prioritizes active stations without stop searching for the new ones. 
 
@@ -24,7 +24,7 @@ The sweep is performed fast (well, as fast as it can), self asjusting the scanni
 * Interactive monitor to skip, ban or pause a frequency manually
 
 ## Notes on Gqrx settings
-Gqrx Remote Protocol must be enabled: Tools->Remote Control.
+Gqrx Remote Protocol must be enabled: Tools->Remote Control. See [this](http://gqrx.dk/doc/remote-control).
 
 It is advisable to disable AGC during the scan: adjust the fixed gain lowering the noise floor to at least -60/-70 dBFS and set the squelch level to -50/-40 dBFS, depending on the band activities and noise levels.
 
