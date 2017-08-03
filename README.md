@@ -33,7 +33,7 @@ The best results are obtained in relative quiet frequencies with sporadic transm
 In sweep mode use a limited bandwidth of about 2 MHz in order to avoid VFO and noise floor levels chainging during the sweep.   
 
 You may also consider to adjust FFT options: FFT size and rate (on FFT Settings) to improve performances (and cpu usages).
-I have found better result with high fft size (64536) and 17 fps refresh rate, but this depends on your gear.
+I have found better result with high fft size (64536) and 17 fps refresh rate, but this depends on your hardware.
 
 ## Command line Options
 TODO
