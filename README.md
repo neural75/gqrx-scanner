@@ -32,7 +32,7 @@ You may also consider to adjust FFT options: FFT size and rate (on FFT Settings)
 I have found better result with high fft size (64536) and 17 fps refresh rate, but this depends on your hardware.
 
 ## Command line Options
-<pre>
+```
 $ ./gqrx-scanner --help
 Usage:
 ./gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
@@ -64,16 +64,16 @@ Examples:
 	Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of 
 	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires
 
-</pre>
+```
 
 ## Interactive Commands 
 These keyboard shortcuts are available during scan:
-<pre>
+```
 [space] OR [enter]  :   Skips a locked frequency (listening to the next).
 'b'                 :   Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq. 
 'c'                 :   Clears all banned frequencies.
 'p'                 :   Pauses scan on locked frequency, 'p' again to unpause. 
-</pre>
+```
 
 
 ## TODOs
@@ -83,9 +83,9 @@ These keyboard shortcuts are available during scan:
 
 
 ## Build and Install
-<pre>
+```
 cmake .
 make
 sudo make install
-</pre>
+```
 
