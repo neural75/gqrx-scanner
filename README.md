@@ -61,7 +61,7 @@ Usage:
 ```
 ./gqrx-scanner 
 ```
-Performes a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx.
+Performs a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx.
 
 ```
 ./gqrx-scanner -m bookmark
