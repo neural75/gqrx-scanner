@@ -51,7 +51,7 @@ Usage:
 -d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2
 -t, --tags <"tags">          Filter signals. Match only on frequencies marked with a tag found in "tags"
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
-                               tags are case insensitive and match also for partial string contained in a tag
+                               tags are case insensitive and match also for partial string contained in a tag 
                                Works only with -m bookmark scan mode
 -v, --verbose                Output more information during scan (used for debug). Default: false
 --help                       This help message.
@@ -77,7 +77,7 @@ These keyboard shortcuts are available during scan:
 
 
 ## TODOs
-* tags matching filters (only bookmarked frequencies with specified tag) 
+* set modulation in bookmark search 
 * automatic audio recording on signal detection
 * parsable output in csv?
 
