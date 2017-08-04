@@ -56,6 +56,14 @@ Usage:
 -v, --verbose                Output more information during scan (used for debug). Default: false
 --help                       This help message.
 
+Examples:
+./gqrx-scanner -m bookmark --min 430000000 --max 431000000 --tags "DMR|Radio Links"
+	Performs a scan using Gqrx bookmarks, monitoring only the frequencies
+	tagged with "DMR" or "Radio Links" in the range 430MHz-431MHz
+./gqrx-scanner --min 430000000 --max 431000000 -d 3
+	Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of 
+	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires
+
 ```
 
 ## Interactive Commands 
