@@ -6,11 +6,17 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceRoot}/bin/Debug/gqrx-scanner",
-            "args": ["-h", "localhost", 
+            "args": 
+            [
+                    "-h", "localhost", 
                     "-p", "7356", 
-                    "--min", "431000000", 
-                    "--max", "432000000",
-                    "-d 2"],//, "--tags", "\"TAG1|TAG2|TAG3\"" ],
+                    "--mode", "bookmark",
+                    //"-f 429000000",
+                    //"--min", "430000000", 
+                    //"--max", "432000000",
+                    "--tags", "\"ponti\"",                 
+                    "-d", "2"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceRoot}",
             "environment": [],

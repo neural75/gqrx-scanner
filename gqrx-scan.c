@@ -33,6 +33,7 @@ SOFTWARE.
  *                  [-t|--tags <"tag1|tag2|...">]       
  *                  [-x|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
  */
+#define _GNU_SOURCE // strcasestr
 #include <stdio.h>
 #include <stdio_ext.h>
 #include <stdlib.h>
@@ -52,6 +53,8 @@ SOFTWARE.
 #include <termios.h>
 #include <time.h>
 #include <getopt.h>
+#include <ctype.h>
+#include <string.h>
 
 #include "gqrx-prot.h"
 
@@ -67,6 +70,7 @@ typedef struct {
     int miss;  // miss count on sweep scan
     char descr[BUFSIZE]; // ugly buffer for descriptions: TODO convert it in a pointer
     char *tags[TAG_MAX]; // tags 
+    int   tag_max;
 }FREQ;
 
 typedef enum
@@ -109,7 +113,9 @@ freq_t          opt_min_freq = 0;
 freq_t          opt_max_freq = 0;
 long            opt_delay = 0;  
 SCAN_MODE       opt_scan_mode = sweep;
+bool            opt_tag_search = false;
 char           *opt_tags[TAG_MAX] = {0};
+int             opt_tag_max = 0;
 bool            opt_disable_store = false;
 // only for debug
 bool            opt_verbose = false;
@@ -119,6 +125,7 @@ bool            opt_verbose = false;
 // Local Prototypes
 //
 bool BanFreq (freq_t freq_current);
+bool IsBannedFreq (freq_t *freq_current);
 void ClearAllBans ( void );
 
 //
@@ -138,14 +145,15 @@ void print_usage ( char *name )
     printf ("-p, --port <port>            The number of the port to connect. Default: 7356\n");
     printf ("-m, --mode <mode>            Scan mode to be used. Default: sweep\n");
     printf ("                               Possible values for <mode>: sweep, bookmark\n");
-    printf ("-f, --freq <freq>            Frequency to scan. Default is the current frequency tuned in Gqrx\n");
-    printf ("                               with a range of +- 1MHz. Incompatible with -b, -e\n");
+    printf ("-f, --freq <freq>            Frequency to scan with a range of +- 1MHz.\n");
+    printf ("                               Default: the current frequency tuned in Gqrx Incompatible with -b, -e\n");
     printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2\n");
-    printf ("-t, --tags <\"tags\">          Filters signals tagged with \"tags\"\n");
+    printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
-    printf ("                               Supported only with -m bookmark scan mode\n");
+    printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
+    printf ("                               Works only with -m bookmark scan mode\n");
     //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");    
@@ -165,18 +173,21 @@ void print_usage ( char *name )
 
 bool ParseTags (char *tags)
 {
-    int len = strlen (tags);
     char *tag = NULL;
 
-
     tag = strtok (tags, "|");
+
     int k = 0;
     while (tag != NULL && k < TAG_MAX)
     {
-        sscanf (tag, "%ms", &opt_tags[k]); // allocate output
+        int len =  strlen(tag) + 1 ;
+        opt_tags[k] = calloc(sizeof(char), len);
+        strncpy(opt_tags[k], tag, len);
+
         tag = strtok(NULL, "|");
         k++;
     }
+    opt_tag_max = k;
     if (k == 0) // wtf
     {
         printf ("Error: -t option requires a '|' separator for list of tags.\n");
@@ -288,8 +299,16 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid frequency\n", c);
                     print_usage(argv[0]);                    
                 }
-                opt_min_freq = opt_freq - g_freq_delta;
-                opt_max_freq = opt_freq + g_freq_delta;
+                if (opt_freq > g_freq_delta)
+                {
+                    opt_min_freq = opt_freq - g_freq_delta;
+                    opt_max_freq = opt_freq + g_freq_delta;
+                }
+                else
+                {
+                    printf ("Error: -%c: Invalid frequency\n", c);
+                    print_usage(argv[0]);                    
+                }
             break;
             case 'b':
                 if (optarg[0] == '-')
@@ -338,9 +357,13 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-            
-                if (!ParseTags(optarg))
+
+                optind--;
+                printf ("%s\n", argv[optind]);
+                if (!ParseTags(argv[optind]))
                     print_usage(argv[0]);
+                optind++;
+                opt_tag_search = true;
             break;
             case '?':
             /* getopt_long already printed an error message. */
@@ -611,9 +634,9 @@ bool prefix(const char *pre, const char *str)
 }
 
 //
-// ReadFrequencies from gqrx file format
+// LoadFrequencies from gqrx file format
 //
-bool ReadFrequencies (FILE *bookmarksfd)
+bool LoadFrequencies (FILE *bookmarksfd)
 {
     char buf[BUFSIZE];
     char *line;
@@ -647,13 +670,17 @@ bool ReadFrequencies (FILE *bookmarksfd)
             int k = 0;
             while (tag != NULL && k < TAG_MAX)
             {
-                sscanf (tag, "%ms", &Frequencies[i].tags[k]);
-                //printf("%s ", Frequencies[i].tags[k]);
+                int len =  strlen(tag) + 1 ;
+                Frequencies[i].tags[k] = calloc(sizeof(char), len);
+                // exclude initial spaces
+                int s;
+                for (s = 0; isspace(tag[s]) ; s++);
+                strncpy(Frequencies[i].tags[k], &tag[s], len);
 
                 k++;
                 tag = strtok (NULL, ",\n");
             }
-
+            Frequencies[i].tag_max = k;
             //printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr);
             i++;
         }
@@ -662,6 +689,36 @@ bool ReadFrequencies (FILE *bookmarksfd)
     return true;
 }
 
+//
+// FilterFrequency
+// Use specified tags (if any) to return the frequency matching the tag
+// return 0 otherwise
+freq_t FilterFrequency (int idx)
+{
+    freq_t current_freq = Frequencies[idx].freq;
+    if (!opt_tag_search)
+        return current_freq;
+
+    bool found = false;
+    for (int i = 0; i < Frequencies[idx].tag_max ; i++)
+    {
+        char *tag = Frequencies[idx].tags[i]; // tag to search
+        for (int k = 0; k < opt_tag_max; k++)
+        {
+            if (strcasestr(tag , opt_tags[k]) != NULL) // ignore case
+            {
+                found = true;
+                break;
+            }
+        }
+        if (found)
+            break;
+    }
+    if (!found)
+        return (freq_t) 0;
+
+    return current_freq;
+}
 
 bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max)
 {
@@ -674,7 +731,6 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
 
     freq_t current_freq = freq_min;
 
-    SetFreq(sockfd, freq_min);
     bool skip = false;
     long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
     long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
@@ -683,9 +739,13 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     {
         for (int i = 0; i < Frequencies_Max; i++)
         {
-            current_freq = Frequencies[i].freq;
-            if (( current_freq > freq_min) &&
-                ( current_freq < freq_max)    )
+            if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
+                continue;
+            if (IsBannedFreq(&current_freq))
+                continue;
+            if ( ( ( current_freq >= freq_min) &&         // in the valid range
+                   ( current_freq <  freq_max)    ) ||  
+                 (freq_min == freq_max)                )  // or using the entire frequencies 
                 {
                     // Found a bookmark in the range
                     SetFreq(sockfd, current_freq);
@@ -695,7 +755,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     if (level >= squelch)
                     {
                         time_t hit_time = GetTime(timestamp);
-                        printf ("[%s] Freq: %s active [%s], Level: %.2f/%.2f ", 
+                        printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ", 
                                 timestamp, print_freq(current_freq), 
                                 Frequencies[i].descr, level, squelch);
                         fflush(stdout);
@@ -1094,7 +1154,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             {
                 SaveFreq(current_freq);    
                 time_t hit_time = GetTime(timestamp);
-                printf ("[%s] Freq: %s active, Level: %.2f/%.2f ", 
+                printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ", 
                         timestamp, print_freq(current_freq), 
                         level, squelch);
                 fflush(stdout);
@@ -1175,20 +1235,72 @@ int main(int argc, char **argv) {
     opt_port     = g_portno;
     opt_delay    = g_delay;
     ParseInputOptions(argc, argv);
-    
 
-    sockfd = Connect(opt_hostname, opt_port);
-
-    if (opt_min_freq == 0 || opt_max_freq == 0)
+    // post validating
+    if (opt_tag_search && (opt_scan_mode == sweep) )
     {
-        freq_t current_freq;
-        GetCurrentFreq(sockfd, &current_freq);
-        opt_min_freq = current_freq - g_freq_delta;
-        opt_max_freq = current_freq + g_freq_delta;
+        // Not supported yet
+        printf ("Error: Optional tag based search is not supported in sweep mode.\n");
+        printf ("       Please specify '-m bookmark' mode.\n");
+        print_usage(argv[0]);
     }
 
+    char from[256], to[256];
+
+    if (
+        (opt_min_freq > opt_max_freq)                        || // bad range or only min specified
+        (opt_min_freq == 0 && opt_max_freq > 0)              || // or  only max specified
+        ((opt_min_freq != 0 && opt_max_freq != 0) &&            // or they are equal but different from 0
+         (opt_min_freq == opt_max_freq)                  ) 
+       ) // or only max specified
+    {
+        strcpy (from, print_freq(opt_min_freq));
+        strcpy (to,   print_freq(opt_max_freq)); 
+        printf ("Error: Invalid frequency range: begin:%s, end=%s.\n", from, to); 
+        printf ("       Please specify '-f <freq>' or '-b <begin_freq> -e <end_freq>.\n");
+        print_usage(argv[0]);
+    }
+
+    // here min & max could be equal to 0 because the user specified -f flag
+    sockfd = Connect(opt_hostname, opt_port);
+
+    if (!opt_tag_search) // sweep or bookmark
+    {
+        if (opt_min_freq == 0 && opt_max_freq == 0)
+        {
+            freq_t current_freq;
+            GetCurrentFreq(sockfd, &current_freq);
+            opt_min_freq = current_freq - g_freq_delta;
+            opt_max_freq = current_freq + g_freq_delta;
+        }
+    }
+    else
+    {
+        // more tollerating with tags (bookmark mode)
+        if (opt_min_freq == opt_max_freq) // user has not set values or has set equals.
+        {
+            printf ("Warning: search the entire frequency range!\n.");
+        }
+
+    }
+
+    strcpy (from, print_freq(opt_min_freq));
+    strcpy (to,   print_freq(opt_max_freq));
+    printf ("Frequency range set from %s to %s.\n", from, to);
+    if (opt_tag_search)
+    {
+        char str [1024];
+        printf ("Tags to search: ");
+        for (int i = 0; i < opt_tag_max ; i++)
+        {
+            printf ("[%s] ", opt_tags[i] );
+        }
+        printf ("\n");
+    }
+
+    
     bookmarksfd = Open(g_bookmarksfile);
-    ReadFrequencies (bookmarksfd);
+    LoadFrequencies (bookmarksfd);
     
     if (opt_scan_mode == sweep)
     {
