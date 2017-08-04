@@ -15,7 +15,8 @@ In sweep mode the scan of the band is performed fast (well, as fast as it can), 
 * Support for Gqrx bookmarks file
 * Fast sweep scan with adaptive monitor of the most active stations 
 * Frequency range constrained scan (also for bookmarks)
-* Automatic Frequency Locking in sweep mode
+* Multiple Tag based search in bookmark scan mode ("Tag1|Tag2|TagX").
+* Automatic Frequency Locking in sweep scan mode
 * Interactive monitor to skip, ban or pause a frequency manually
 
 ## Notes on Gqrx settings
