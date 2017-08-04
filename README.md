@@ -33,7 +33,6 @@ I have found better result with high fft size (64536) and 17 fps refresh rate, b
 
 ## Command line Options
 ```
-$ ./gqrx-scanner --help
 Usage:
 ./gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
@@ -45,24 +44,17 @@ Usage:
 -p, --port <port>            The number of the port to connect. Default: 7356
 -m, --mode <mode>            Scan mode to be used. Default: sweep
                                Possible values for <mode>: sweep, bookmark
--f, --freq <freq>            Frequency to scan. Default is the current frequency tuned in Gqrx
-                               with a range of +- 1MHz. Incompatible with -b, -e
+-f, --freq <freq>            Frequency to scan with a range of +- 1MHz.
+                               Default: the current frequency tuned in Gqrx Incompatible with -b, -e
 -b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f
 -e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
 -d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2
--t, --tags <"tags">          Filters signals tagged with "tags"
+-t, --tags <"tags">          Filter signals. Match only on frequencies marked with a tag found in "tags"
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
-                               Supported only with -m bookmark scan mode
+                               tags are case insensitive and match also for partial string contained in a tag
+                               Works only with -m bookmark scan mode
 -v, --verbose                Output more information during scan (used for debug). Default: false
 --help                       This help message.
-
-Examples:
-./gqrx-scanner -m bookmark --min 430000000 --max 431000000 --tags "DMR|Radio Links"
-	Performs a scan using Gqrx bookmarks, monitoring only the frequencies
-	tagged with "DMR" or "Radio Links" in the range 430MHz-431MHz
-./gqrx-scanner --min 430000000 --max 431000000 -d 3
-	Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of 
-	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires
 
 ```
 
