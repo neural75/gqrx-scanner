@@ -75,17 +75,15 @@ These keyboard shortcuts are available during scan:
 'p'                 :   Pauses scan on locked frequency, 'p' again to unpause. 
 ```
 
-
-## TODOs
-* set modulation in bookmark search 
-* automatic audio recording on signal detection
-* parsable output in csv?
-
-
 ## Build and Install
 ```
 cmake .
 make
 sudo make install
 ```
+
+## TODOs
+* set modulation in bookmark search 
+* automatic audio recording on signal detection
+* parsable output in csv?
 
