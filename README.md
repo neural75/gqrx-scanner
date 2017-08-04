@@ -88,6 +88,16 @@ Performs a scan using Gqrx bookmarks, monitoring only the frequencies tagged wit
 ```
 Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires.
 
+### Sample output
+
+```
+$ ./gqrx-scanner -m bookmark -f 430000000
+Frequency range set from 429.000 MHz to 431.000 MHz.
+[04-08-17 19:51:54] Freq: 430.037 MHz active [ Beigua                   ], Level: -40.20/-50.70  [elapsed time 03 sec]
+[04-08-17 19:51:57] Freq: 430.288 MHz active [ ponte dmr                ], Level: -39.00/-50.70  [elapsed time 43 sec]
+[04-08-17 19:52:40] Freq: 430.887 MHz active [ DMR                      ], Level: -30.50/-50.70  [elapsed time 11 sec]
+[04-08-17 19:53:23] Freq: 430.900 MHz active [ Genova DMR               ], Level: -32.20/-50.70  [elapsed time 14 sec]
+```
 
 ## Interactive Commands 
 These keyboard shortcuts are available during scan:
