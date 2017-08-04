@@ -63,20 +63,24 @@ Usage:
 ```
 Performs a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx.
 
+
 ```
 ./gqrx-scanner -m bookmark
 ```
 Search all bookmarks for frequencies in the range +- 1 Mhz from the demodulator frequency in Gqrx.
+
 
 ```
 ./gqrx-scanner -f 144000000
 ```
 Performs a sweep scan from the central frequency 144.000 MHz using the range 143.000-145.000 MHz.
 
+
 ```
 ./gqrx-scanner -m bookmark --min 430000000 --max 431000000 --tags "DMR|Radio Links"
 ```
 Performs a scan using Gqrx bookmarks, monitoring only the frequencies tagged with "DMR" or "Radio Links" in the range 430MHz-431MHz.
+
 
 ```	
 ./gqrx-scanner --min 430000000 --max 431000000 -d 3
