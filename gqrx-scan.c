@@ -359,7 +359,6 @@ bool ParseInputOptions (int argc, char **argv)
                 }
 
                 optind--;
-                printf ("%s\n", argv[optind]);
                 if (!ParseTags(argv[optind]))
                     print_usage(argv[0]);
                 optind++;
@@ -1279,7 +1278,7 @@ int main(int argc, char **argv) {
         // more tollerating with tags (bookmark mode)
         if (opt_min_freq == opt_max_freq) // user has not set values or has set equals.
         {
-            printf ("Warning: search the entire frequency range!\n.");
+            printf ("Warning: search tags on the entire frequency range!\n");
         }
 
     }
@@ -1287,6 +1286,10 @@ int main(int argc, char **argv) {
     strcpy (from, print_freq(opt_min_freq));
     strcpy (to,   print_freq(opt_max_freq));
     printf ("Frequency range set from %s to %s.\n", from, to);
+    
+    bookmarksfd = Open(g_bookmarksfile);
+    LoadFrequencies (bookmarksfd);
+
     if (opt_tag_search)
     {
         char str [1024];
@@ -1296,11 +1299,21 @@ int main(int argc, char **argv) {
             printf ("[%s] ", opt_tags[i] );
         }
         printf ("\n");
-    }
 
-    
-    bookmarksfd = Open(g_bookmarksfile);
-    LoadFrequencies (bookmarksfd);
+        // Check if there are any
+        int count = 0;
+        for (int i = 0 ; i < Frequencies_Max; i++ )
+        {
+            if (FilterFrequency(i) != (freq_t) 0 )
+                count++;
+        }
+        if (count == 0)
+        {
+            printf("No match. Exit.\n");
+            exit (1);
+        }
+        printf ("%d candidate frequencies found.\n", count);
+    }
     
     if (opt_scan_mode == sweep)
     {
