@@ -58,35 +58,46 @@ Usage:
 --help                       This help message.
 
 ```
+
+## Interactive Commands 
+These keyboard shortcuts are available during scan:
+```
+[space] OR [enter]  :   Skips a locked frequency (listening to the next).
+'b'                 :   Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq. 
+'c'                 :   Clears all banned frequencies.
+'p'                 :   Pauses scan on locked frequency, 'p' again to unpause. 
+```
+
 ## Examples
+Performs a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx:
 ```
 ./gqrx-scanner 
 ```
-Performs a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx.
+<br>
 
-
+Search all bookmarks for frequencies in the range +- 1 Mhz from the demodulator frequency in Gqrx:
 ```
 ./gqrx-scanner -m bookmark
 ```
-Search all bookmarks for frequencies in the range +- 1 Mhz from the demodulator frequency in Gqrx.
+<br>
 
-
+Performs a sweep scan from the central frequency 144.000 MHz using the range 143.000-145.000 MHz:
 ```
 ./gqrx-scanner -f 144000000
 ```
-Performs a sweep scan from the central frequency 144.000 MHz using the range 143.000-145.000 MHz.
+<br>
 
+Performs a scan using Gqrx bookmarks, monitoring only the frequencies tagged with "DMR" or "Radio Links" in the range 430MHz-431MHz:
 
 ```
 ./gqrx-scanner -m bookmark --min 430000000 --max 431000000 --tags "DMR|Radio Links"
 ```
-Performs a scan using Gqrx bookmarks, monitoring only the frequencies tagged with "DMR" or "Radio Links" in the range 430MHz-431MHz.
+<br>
 
-
+Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires:
 ```	
 ./gqrx-scanner --min 430000000 --max 431000000 -d 3
 ```
-Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires.
 
 ### Sample output
 
@@ -97,15 +108,6 @@ Frequency range set from 429.000 MHz to 431.000 MHz.
 [04-08-17 19:51:57] Freq: 430.288 MHz active [ ponte dmr                ], Level: -39.00/-50.70  [elapsed time 43 sec]
 [04-08-17 19:52:40] Freq: 430.887 MHz active [ DMR                      ], Level: -30.50/-50.70  [elapsed time 11 sec]
 [04-08-17 19:53:23] Freq: 430.900 MHz active [ Genova DMR               ], Level: -32.20/-50.70  [elapsed time 14 sec]
-```
-
-## Interactive Commands 
-These keyboard shortcuts are available during scan:
-```
-[space] OR [enter]  :   Skips a locked frequency (listening to the next).
-'b'                 :   Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq. 
-'c'                 :   Clears all banned frequencies.
-'p'                 :   Pauses scan on locked frequency, 'p' again to unpause. 
 ```
 
 ## Build and Install
