@@ -19,9 +19,10 @@ In sweep mode the scan of the band is performed fast (well, as fast as it can), 
 * Automatic Frequency Locking in sweep scan mode
 * Interactive monitor to skip, ban or pause a frequency manually
 
-## Notes on Gqrx settings
+## Pre-requisites
 Gqrx Remote Protocol must be enabled: Tools->Remote Control. See [this](http://gqrx.dk/doc/remote-control).
 
+## Notes on Gqrx settings
 It is advisable to disable AGC during the scan: adjust the fixed gain lowering the noise floor to at least -60/-70 dBFS and set the squelch level to -50/-40 dBFS, depending on the band activities and noise levels.
 
 The best results are obtained in relative quiet frequencies with sporadic transmissions. If the band is cluttered with armonics and other types of persistent noise, avoid the sweep scan and use the bookmarks mode with a higher squelch level (or use the 'b' key to ban a frequency from the scan). 
