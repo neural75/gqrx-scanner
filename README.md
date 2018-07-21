@@ -118,6 +118,12 @@ make
 sudo make install
 ```
 
+## Uninstall
+```
+sudo make uninstall
+```
+
+
 ## TODOs
 * set modulation in bookmark search 
 * automatic audio recording on signal detection
