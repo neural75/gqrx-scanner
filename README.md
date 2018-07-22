@@ -28,7 +28,7 @@ It is advisable to disable AGC during the scan: adjust the fixed gain lowering t
 The best results are obtained in relative quiet frequencies with sporadic transmissions. If the band is cluttered with armonics and other types of persistent noise, avoid the sweep scan and use the bookmarks mode with a higher squelch level (or use the 'b' key to ban a frequency from the scan). 
 
 In sweep mode use a limited bandwidth of about 2 MHz in order to avoid VFO and noise floor levels chainging during the sweep.
-If you don't pass the --min, --max option, set the demodulator frequency to the middle of the screen and start from there (to avoid the panadapter to move during the scan).
+If you don't provide the --min, --max option, set the demodulator frequency to the middle of the screen and start from there in order to avoid the panadapter to move during the scan.
 
 You may also consider to adjust FFT options: FFT size and rate (on FFT Settings) to improve performances (and cpu usage).
 I have found better result with high fft size (64536) and 17 fps refresh rate, but this depends on your hardware.
