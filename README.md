@@ -113,6 +113,17 @@ Frequency range set from 429.000 MHz to 431.000 MHz.
 
 ## Build and Install
 ```
+cmake . 
+make
+sudo make install
+```
+
+## To build for Mac-OSX
+
+run `ccmake`, toggle, and set CMAKE_C_FLAGS=-DOSX
+
+```
+ccmake .
 cmake .
 make
 sudo make install
