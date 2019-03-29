@@ -35,7 +35,10 @@ SOFTWARE.
  */
 #define _GNU_SOURCE // strcasestr
 #include <stdio.h>
+#ifndef OSX
 #include <stdio_ext.h>
+#else
+#endif 
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -49,7 +52,11 @@ SOFTWARE.
 #include <fcntl.h>
 #include <pwd.h>
 #include <stdbool.h>
+#ifndef OSX
 #include <linux/limits.h>
+#else
+#include <sys/syslimits.h>
+#endif
 #include <termios.h>
 #include <time.h>
 #include <getopt.h>
@@ -513,7 +520,11 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     bool    skip = false;
     bool    pause = false;
     
+#ifndef OSX
     __fpurge(stdin);
+#else
+    fpurge(stdin);
+#endif
     nonblock(NB_ENABLE);
     
     do
@@ -597,7 +608,11 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     // round up to next near tenth of khz  145892125 -> 145900000
     *current_freq = ceil( *current_freq / 10000.0 ) * 10000.0; 
     
+#ifndef OSX
     __fpurge(stdin);
+#else
+    fpurge(stdin);
+#endif
     return skip; 
 }
 

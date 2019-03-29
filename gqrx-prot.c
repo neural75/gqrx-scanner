@@ -34,7 +34,11 @@ SOFTWARE.
 #include <fcntl.h>
 #include <pwd.h>
 #include <stdbool.h>
+#ifndef OSX
 #include <linux/limits.h>
+#else
+#include <sys/syslimits.h>
+#endif
 #include <math.h>
 #include "gqrx-prot.h"
 
