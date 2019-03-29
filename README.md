@@ -97,7 +97,7 @@ Performs a scan using Gqrx bookmarks, monitoring only the frequencies tagged wit
 
 Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires:
 ```	
-./gqrx-scanner --min 430000000 --max 431000000 -d 3
+./gqrx-scanner --min 430000000 --max 431000000 -d 3000
 ```
 
 ### Sample output
