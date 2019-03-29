@@ -100,7 +100,7 @@ const int       g_portno            = 7356;
 const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq. 
 const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
-const long      g_delay             = 2000000; // 2 sec
+const long      g_delay             = 2000000000; // 2 sec
 const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
 
 //
@@ -137,7 +137,7 @@ void print_usage ( char *name )
     printf ("Usage:\n");
     printf ("%s\t[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]\n", name);
     printf ("\t\t[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]\n");
-    printf ("\t\t[-d|--delay <lingering time in seconds>]\n");
+    printf ("\t\t[-d|--delay <lingering time in milliseconds>]\n");
     printf ("\t\t[-t|--tags <\"tag1|tag2|...\">]\n");
     printf ("\t\t[-v|--verbose]\n");
     printf ("\n");
@@ -149,7 +149,7 @@ void print_usage ( char *name )
     printf ("                               Default: the current frequency tuned in Gqrx Incompatible with -b, -e\n");
     printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
-    printf ("-d, --delay <time>           Lingering time in seconds before the scanner reactivates. Default 2\n");
+    printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2\n");
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
@@ -349,7 +349,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid delay\n", c);
                     print_usage(argv[0]);
                 }
-                opt_delay *= 1000000; // in microsec
+                opt_delay *= 1000; // in microsec
             break;
             case 't':
                 if (optarg[0] == '-')
