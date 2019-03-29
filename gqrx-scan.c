@@ -149,7 +149,7 @@ void print_usage ( char *name )
     printf ("                               Default: the current frequency tuned in Gqrx Incompatible with -b, -e\n");
     printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
-    printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2\n");
+    printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
