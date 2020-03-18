@@ -467,42 +467,20 @@ time_t GetTime(char *timestamp)
             ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
     return etime;
 }
-// Calculate difference in time in [dd days][hh:][mm:][ss secs]
-time_t DiffTime(char *timestamp, time_t start_time)
+// Calculate difference in time as form, '23h45m56.60s'
+double DiffTime(char *timestamp, time_t start_time)
 {
-    double seconds;
+    double elapsed_seconds;
     time_t etime = time (NULL);
-    seconds = difftime(etime , start_time);
 
-    time_t elapssed = (time_t)seconds; //aerrg
-    struct tm *ltime = localtime(&elapssed);
+    elapsed_seconds = difftime(etime, start_time);
 
-    timestamp[0] = '\0';
-    if (ltime->tm_mday > 1)
-    {
-        char days[10];
-        sprintf(days, "%2d days ", ltime->tm_mday-1);
-        strcat(timestamp, days);
-    }
-    if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
-    {
-        char hours[10];
-        sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
-        strcat(timestamp, hours);
-    }
-    if (ltime->tm_min > 0)
-    {
-        char min[10];
-        sprintf(min, "%2.2d:", ltime->tm_min);
-        strcat(timestamp, min);
-    }
-    if (ltime->tm_sec > 0)
-    {
-        char sec[10];
-        sprintf(sec, "%2.2d sec", ltime->tm_sec);
-        strcat(timestamp, sec);
-    }
-    return elapssed;
+    int disp_minutes = elapsed_seconds / 60;
+    double disp_seconds = elapsed_seconds - (disp_minutes * 60);
+    int disp_hours = disp_minutes / 60;
+    disp_minutes -= (disp_hours * 60);
+    sprintf(timestamp, "%2dh%2dm%2.2fs", disp_hours, disp_minutes, disp_seconds);
+    return elapsed_seconds;
 }
 
 //
@@ -775,7 +753,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
-                        printf (" [elapsed time %s]\n", timestamp);
+                        printf (" [%s elapsed]\n", timestamp);
                         fflush(stdout);
                     }
                     else    
@@ -1175,7 +1153,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 // Wait user input or delay time after signal lost
                 skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                 time_t elapsed = DiffTime(timestamp, hit_time);
-                printf (" [elapsed time %s]\n", timestamp);
+                printf (" [%s elapsed]\n", timestamp);
                 fflush(stdout);
             }
         }
