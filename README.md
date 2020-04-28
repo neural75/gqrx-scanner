@@ -1,5 +1,20 @@
 # gqrx-scanner
 A frequency scanner for [Gqrx Software Defined Radio](http://gqrx.dk/) receiver
+## Changes made for this fork
+This fork has had some minor changes, and a lot of commenting on the code (for me to keep track of what I've done and what I suspect might be issues)
+
+I have slowed down the bookmark scan feature. The default was set to 85ms (I think) and I've slowed it down to 250ms, this seems to fix issues where the scanner stops on the wrong bookmark when level > squelch due to issues noted in the Remote Control where the signal level isn't updated through the API as quickly as it needs to be to keep up. Thus, I've lowered the scan speed to compensate. In the future, I hope to implement a command line argument to specify a scan speed so each user can fine tune this to their own needs.
+
+A second issue I have fixed (albeit a quick fix) is to comment out parts of the calculation function that calculates the time elapsed in the print out for which bookmark or channel the scanner stops on, I've reduced it to just hours, minutes and seconds for now due to an issue where '30 days' was showing for many users.
+
+Another issue I am attempting to correct is resume from stopping on a bookmark if a -d 3000 argument isn't given in the command line when launching. Current workaround is to launch the application using:
+
+./gqrx-scanner -m bookmark -d 3000 
+
+I am not sure if this issue has to do with the lack of specifying a delay argument, or if the default delay is too low and gets caught in a if/while loop forever. Still investigating.
+
+Another feature I am looking into is the ability to switch between dd-mm-yy and mm-dd-yy and yy-mm-dd formating etc for timestamp using an argument at the command line. Currently, for testing, I have switched this to the mm-dd-yy format to see how the code worked, and also because I am more accustomed to this format (no offense to all those posh Europeans who prefer the other format)
+
 ## Description
 
 gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks (--mode bookmark) to look for the already stored frequencies or, in a free sweep scan mode (--mode sweep), to explore the band within a specified frequency range (--min, --max options). 
