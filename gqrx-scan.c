@@ -107,7 +107,7 @@ const int       g_portno            = 7356;
 const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq. 
 const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
-const long      g_delay             = 2000000000; // 2 sec
+const long      g_delay             = 2000000000; // 2 sec 
 const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
 
 //
@@ -463,33 +463,37 @@ time_t GetTime(char *timestamp)
 {
     time_t etime = time(NULL);
     struct tm *ltime = localtime (&etime);
-    sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,
-            ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
+    //sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,    //LWVMOBILE: Going to attempt to switch around mm and dd to see what happens
+    //        ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                            //LWVMOBILE: Switches Print order to mm-dd-yy, may switch to yy-mm-dd
+    sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mon+1, ltime->tm_mday, ltime->tm_year%100,      //LWVMOBILE: Going to remove the +1 from the month to see what happens
+            ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                              //LWVMOBILE: Removing +1 seems to set month back one month, why does that happen?
     return etime;
 }
 // Calculate difference in time in [dd days][hh:][mm:][ss secs]
+
+//LWVMOBILE: IT IS VERY TEMPTING TO JUST LOP OFF MOST OF THIS FUNCTION, HOW MANY TX LAST MORE THAN SECONDS UNLESS ITS JUST NOISE??
 time_t DiffTime(char *timestamp, time_t start_time)
 {
     double seconds;
     time_t etime = time (NULL);
     seconds = difftime(etime , start_time);
 
-    time_t elapssed = (time_t)seconds; //aerrg
-    struct tm *ltime = localtime(&elapssed);
-
+    time_t elapssed = (time_t)seconds; //aerrg //LWVMOBILE: ARRRRG MOTHER F*R INDEED!
+    struct tm *ltime = localtime(&elapssed); //LWVMOBILE: elapssed spelled wrong? or just a different variable?
+// LWVMOBILE: I decided to only remove days from equation, why isn't months calculated here?
     timestamp[0] = '\0';
-    if (ltime->tm_mday > 1)
-    {
-        char days[10];
-        sprintf(days, "%2d days ", ltime->tm_mday-1);
-        strcat(timestamp, days);
-    }
-    if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
-    {
-        char hours[10];
-        sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
-        strcat(timestamp, hours);
-    }
+//    if (ltime->tm_mday > 1)
+//    {
+//        char days[10];
+//        sprintf(days, "%2d days ", ltime->tm_mday-1); //LWVMOBILE: Hmmmm....wonder why mday is mday-1 here?? Maybe that causes it to roll backwards to 30 days?? or maybe it doesn't work right?
+//        strcat(timestamp, days);
+//    }
+//    if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
+//    {
+//        char hours[10];
+//        sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
+//        strcat(timestamp, hours);
+//    }
     if (ltime->tm_min > 0)
     {
         char min[10];
@@ -505,6 +509,11 @@ time_t DiffTime(char *timestamp, time_t start_time)
     return elapssed;
 }
 
+// LWVMOBILE: I removed all calculations for months, days, and hours. Something in the days or hours calculation makes it roll backwards to 30 days, perhaps the GMT time offset may need time zone feature. 
+// LWVMOBILE: Seconds seems to be 'calculated' by only looking at the difference initial seconds reading and ending, in other words it rolls 0 to 60 and then to 0 again, doesn't accumulate upwards.
+// LWVMOBILE: Going to leave this as just minutes and secods, I would do seconds only, but time is calculated using simple subtraction from each field as opposed to counting upwards in seconds.
+
+
 //
 // WaitUserInputOrDelay
 // Waits for user input or a delay after the carrier is gone
@@ -514,7 +523,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 {
     double    squelch;
     double  level;
-    long    sleep_time = 0, sleep = 100000; // 100 ms
+    long    sleep_time = 0, sleep = 100000; // 100 ms 
     int     exit = 0;
     char    c;
     bool    skip = false;
@@ -584,12 +593,15 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         // exit = 0
         if (level < squelch )
         {
-            // Signal drop below the threshold, start counting sleep time
-            sleep_time += sleep;
+            
+        
+            // Signal drop below the threshold, start counting sleep time //LWVMOBILE: Scan stoppage seems to happen here, I think, if sleep_time is greater than delay??
+            sleep_time += sleep; 
             if (sleep_time > delay)
             {
-                exit = 1;
-                skip = false;
+            
+                exit = 1; 
+                skip = false; 
             }
         }
         else 
@@ -746,8 +758,11 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     freq_t current_freq = freq_min;
 
     bool skip = false;
-    long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
-    long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
+    long sleep_cycle_active = 500000;   // skipping from active frequency need more time to wait squelch level to kick in
+    long sleep_cyle_saved   = 85000 ;   // skipping freqeuency need more time to get signal level
+
+    long slow_scan_cycle    = 1000000;   // LWVMOBILE: Just doubling numbers to slow down scan time in bookmark search, 1,000,000 = 1 second. EDIT: DOES THIS VARIABLE DO ANYTHING?
+    long slow_cycle_saved   = 250000;  // LWVMOBILE: Just doubling numbers to slow down scan time in bookmark search. THIS ONE SEEMS TO ACTUALLY SLOW SCAN SPEED DOWN.
     char timestamp[BUFSIZE] = {0};
     while (true)
     {
@@ -764,7 +779,11 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     // Found a bookmark in the range
                     SetFreq(sockfd, current_freq);
                     GetSquelchLevel(sockfd, &squelch);
-                    usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
+                    //usleep((skip)?sleep_cycle_active:sleep_cyle_saved);       //LWVMOBILE: Perhaps place a small sleep here of 1000ms, slow scan to prevent 'slipping' issue in bookmark search.
+                    usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
+                    //usleep((skip)?99000:1000000);                          //LWVMOBILE: Something seems to stop scan without resuming without setting -d 3000 for delay.
+                    // LWVMOBILE: Above code implementation seems to cause issues with bookmark scan resuming, or something else does.
+                    // LWVMOBILE: WORKAROUND: Specify a delay time in the command line with -d 3000 for 3000ms delay, resumes afterwards.
                     GetSignalLevelEx(sockfd, &level, 3 );
                     if (level >= squelch)
                     {
@@ -775,7 +794,9 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
-                        printf (" [elapsed time %s]\n", timestamp);
+                        printf (" [elapsed time %s]\n", timestamp);      
+                                                                        
+                                                                        
                         fflush(stdout);
                     }
                     else    
