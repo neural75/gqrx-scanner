@@ -107,8 +107,10 @@ const int       g_portno            = 7356;
 const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq. 
 const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
-const long      g_delay             = 2000000000; // 2 sec 
+const long      g_delay             = 2500000; // 2 sec //LWVMOBILE: Doesn't this default value equal 20 seconds? Changing to a lower number. Was 2000000000
+//LWVMOBILE: Above variable was set WAY too high, it wasn't 2 seconds, but 2000 seconds.
 const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
+//LWVMOBILE: Insert new constants here for scan speed and date format?? Or just use variable with speed set already
 
 //
 // Input options
@@ -118,7 +120,11 @@ int             opt_port = 0;
 freq_t          opt_freq = 0;
 freq_t          opt_min_freq = 0;
 freq_t          opt_max_freq = 0;
-long            opt_delay = 0;  
+long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250 attempt to fix 'no delay argument given' stoppage on bookmark scan
+//LWVMOBILE: New variables inserted here
+long            opt_speed = 250000;
+long            opt_date = 0;
+//LWVMOBILE; End new variables.  
 SCAN_MODE       opt_scan_mode = sweep;
 bool            opt_tag_search = false;
 char           *opt_tags[TAG_MAX] = {0};
@@ -157,6 +163,15 @@ void print_usage ( char *name )
     printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
+//LWVMOBILE: Adding some descriptions for new switches here
+    printf ("-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.\n");
+    printf ("                               If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed\n");
+    printf ("-y  --date                   Date Format, default is 0.\n");
+    printf ("                               0 = mm-dd-yy\n");
+    printf ("                               1 = dd-mm-yy\n");
+    printf ("                               2 = yy-mm-dd\n");
+    printf ("                               This feature has not been implemented yet.\n");
+//LWVMOBILE: End of new switches here
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
@@ -224,13 +239,18 @@ bool ParseInputOptions (int argc, char **argv)
           {"min",     required_argument, 0, 'b'},
           {"max",     required_argument, 0, 'e'},
           {"tags",    required_argument, 0, 't'},
-          {"delay",   required_argument, 0, 'd'},          
+          {"delay",   required_argument, 0, 'd'},
+//LWVMOBILE: adding new entries here
+          {"speed",   required_argument, 0, 'x'},
+          {"date",    required_argument, 0, 'y'},
+//LWVMOBILE: end of new entries                    
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v",
+//LWVMOBILE: Adding new argument letters to this index
+        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y", 
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -358,6 +378,28 @@ bool ParseInputOptions (int argc, char **argv)
                 }
                 opt_delay *= 1000; // in microsec
             break;
+//LWVMOBILE: Adding new entries here to handle switches in CLI
+
+            case 'x':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+            
+                if ((opt_speed = atol(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid speed\n", c);
+                    print_usage(argv[0]);
+                }
+                opt_speed *= 1000; // in microsec //LWVMOBILE: Made new opt_speed variable. Implemented and working for bookmark mode.
+            break;
+
+            case 'y':
+                opt_date = 0; //LWVMOBILE: Not implemented yet, just defaulting a variable to 0 for now.
+            break;                    
+
+//LWVMOBILE: End new entried
             case 't':
                 if (optarg[0] == '-')
                 {
@@ -471,29 +513,34 @@ time_t GetTime(char *timestamp)
 }
 // Calculate difference in time in [dd days][hh:][mm:][ss secs]
 
-//LWVMOBILE: IT IS VERY TEMPTING TO JUST LOP OFF MOST OF THIS FUNCTION, HOW MANY TX LAST MORE THAN SECONDS UNLESS ITS JUST NOISE??
+//LWVMOBILE: It is very tempting to lop off part of this function, how many TX lasts more than a few seconds or minutes??
+//LWVMOBILE: Will still need to rework eventually, this will cause any time greater than 60 minutes to roll over back to 0 I believe
 time_t DiffTime(char *timestamp, time_t start_time)
 {
     double seconds;
     time_t etime = time (NULL);
     seconds = difftime(etime , start_time);
 
-    time_t elapssed = (time_t)seconds; //aerrg //LWVMOBILE: ARRRRG MOTHER F*R INDEED!
+    time_t elapssed = (time_t)seconds; //aerrg //LWVMOBILE: ARRRRG!
     struct tm *ltime = localtime(&elapssed); //LWVMOBILE: elapssed spelled wrong? or just a different variable?
-// LWVMOBILE: I decided to only remove days from equation, why isn't months calculated here?
+// LWVMOBILE: I decided to only remove days from equation.
     timestamp[0] = '\0';
-//    if (ltime->tm_mday > 1)
-//    {
-//        char days[10];
-//        sprintf(days, "%2d days ", ltime->tm_mday-1); //LWVMOBILE: Hmmmm....wonder why mday is mday-1 here?? Maybe that causes it to roll backwards to 30 days?? or maybe it doesn't work right?
-//        strcat(timestamp, days);
-//    }
-//    if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
-//    {
-//        char hours[10];
-//        sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
-//        strcat(timestamp, hours);
-//    }
+
+
+/*  if (ltime->tm_mday > 1) //LWVMOBILE: Comment out here if break/regression happens
+      {
+          char days[10];
+          sprintf(days, "%2d days ", ltime->tm_mday); //LWVMOBILE: Hmmmm....wonder why mday is mday-1 here?? Maybe that causes it to roll backwards to 30 days?? or maybe it doesn't work right?
+          strcat(timestamp, days);                    //LWVMOBILE: Changing -1 displays 31 days, I wonder if the +1 month up above makes this display wrong but is needed for correct date??
+      }                                               //LWVMOBILE: I just discovered elapsed time also displays 24 minutes as well for some reason.
+      if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
+      {
+          char hours[10];
+          sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
+          strcat(timestamp, hours);
+      } */ // LWVMOBILE: Comment out to here if regression happens
+
+
     if (ltime->tm_min > 0)
     {
         char min[10];
@@ -595,7 +642,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         {
             
         
-            // Signal drop below the threshold, start counting sleep time //LWVMOBILE: Scan stoppage seems to happen here, I think, if sleep_time is greater than delay??
+            // Signal drop below the threshold, start counting sleep time 
             sleep_time += sleep; 
             if (sleep_time > delay)
             {
@@ -780,10 +827,9 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     SetFreq(sockfd, current_freq);
                     GetSquelchLevel(sockfd, &squelch);
                     //usleep((skip)?sleep_cycle_active:sleep_cyle_saved);       //LWVMOBILE: Perhaps place a small sleep here of 1000ms, slow scan to prevent 'slipping' issue in bookmark search.
-                    usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
-                    //usleep((skip)?99000:1000000);                          //LWVMOBILE: Something seems to stop scan without resuming without setting -d 3000 for delay.
-                    // LWVMOBILE: Above code implementation seems to cause issues with bookmark scan resuming, or something else does.
-                    // LWVMOBILE: WORKAROUND: Specify a delay time in the command line with -d 3000 for 3000ms delay, resumes afterwards.
+                    //usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
+                    usleep((skip)?slow_scan_cycle:opt_speed);                   //LWVMOBILE: Using new variable set by default and also by user switch. Seems to work. GJ ME.
+                    // LWVMOBILE: Scan stoppage due to no delay argument given has been fixed, was a variable set way too high.
                     GetSignalLevelEx(sockfd, &level, 3 );
                     if (level >= squelch)
                     {
