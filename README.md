@@ -7,7 +7,7 @@ I have slowed down the bookmark scan feature. The default was set to 85ms (I thi
 
 Currently, I have set the default scan speed to 250ms, I have just implemented the -x CLI argument to specify bookmark scan speed in milliseconds so users can fine-tune the speed of the bookmark scan in case they find the default speed too fast and it causing the scan to land on the wrong bookmark. This can be invoked by using:
 
-./gqrx-scanner -x 300 
+./gqrx-scanner -m bookmark -x 300 
 
 for example, to use 300 milliseconds between switching bookmarks.
 
