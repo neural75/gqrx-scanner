@@ -1,5 +1,22 @@
 # gqrx-scanner
 A frequency scanner for [Gqrx Software Defined Radio](http://gqrx.dk/) receiver
+## Changes made for this fork
+This fork has had some minor changes, and a lot of commenting on the code (for me to keep track of what I've done and what I suspect might be issues)
+
+I have slowed down the bookmark scan feature. The default was set to 85ms (I think) and I've slowed it down to 250ms, this seems to fix issues where the scanner stops on the wrong bookmark when level > squelch due to issues noted in the Remote Control where the signal level isn't updated through the API as quickly as it needs to be to keep up. Thus, I've lowered the scan speed to compensate. 
+
+Currently, I have set the default scan speed to 250ms, I have just implemented the -x CLI argument to specify bookmark scan speed in milliseconds so users can fine-tune the speed of the bookmark scan in case they find the default speed too fast and it causing the scan to land on the wrong bookmark. This can be invoked by using:
+
+./gqrx-scanner -m bookmark -x 300 
+
+for example, to use 300 milliseconds between switching bookmarks.
+
+A second issue I have fixed (albeit a quick fix) is to comment out parts of the calculation function that calculates the time elapsed in the print out for which bookmark or channel the scanner stops on, I've reduced it to just minutes and seconds for now due to an issue where '30 days and 24 minutes' was showing for many users. A more thorough fix will be worked on in the future.
+
+A third issue fixed is the delay time being set to default to 2500 seconds as opposed to 2500 milliseconds causing it to appear that the bookmark scanner had stopped entirely when it detected activity on a channel and would never resume. Previously, you would have to manually specify a delay time with the -d 3000 for example. This is now fixed and defaulted to 2500 milliseconds, or 2.5 seconds.
+
+Another feature I am looking into is the ability to switch between dd-mm-yy and mm-dd-yy and yy-mm-dd formating etc for timestamp using an argument at the command line. Currently, for testing, I have switched this to the mm-dd-yy format to see how the code worked, and also because I am more accustomed to this format. I have implemented an argument -y for date format at the command line, but its currently unavailable.
+
 ## Description
 
 gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks (--mode bookmark) to look for the already stored frequencies or, in a free sweep scan mode (--mode sweep), to explore the band within a specified frequency range (--min, --max options). 
