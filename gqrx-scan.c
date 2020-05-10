@@ -184,7 +184,7 @@ void print_usage ( char *name )
     printf ("%s -m bookmark --min 430000000 --max 431000000 --tags \"DMR|Radio Links\"\n", name);
     printf ("\tPerforms a scan using Gqrx bookmarks, monitoring only the frequencies\n");
     printf ("\ttagged with \"DMR\" or \"Radio Links\" in the range 430MHz-431MHz\n");
-    printf ("%s --min 430000000 --max 431000000 -d 3\n", name);
+    printf ("%s --min 430000000 --max 431000000 -d 3000\n", name);
     printf ("\tPerforms a sweep scan from frequency 430MHz to 431MHz, using a delay of \n");
     printf ("\t3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires\n");
     printf ("\n");
