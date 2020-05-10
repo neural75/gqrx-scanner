@@ -37,7 +37,7 @@ I have found better result with high fft size (64536) and 17 fps refresh rate, b
 ## Command line Options
 ```
 Usage:
-./gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
+gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
 		[-d|--delay <lingering time in milliseconds>]
 		[-t|--tags <"tag1|tag2|...">]
@@ -52,6 +52,13 @@ Usage:
 -b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f
 -e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
 -d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000
+-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.
+                               If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed
+-y  --date                   Date Format, default is 0.
+                               0 = mm-dd-yy
+                               1 = dd-mm-yy
+                               2 = yy-mm-dd
+                               This feature has not been implemented yet.
 -t, --tags <"tags">          Filter signals. Match only on frequencies marked with a tag found in "tags"
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
                                tags are case insensitive and match also for partial string contained in a tag
