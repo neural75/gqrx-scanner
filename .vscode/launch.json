@@ -5,17 +5,18 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/bin/Debug/gqrx-scanner",
+            "program": "${workspaceRoot}/bin/gqrx-scanner",
             "args": 
             [
-                    "-h", "localhost", 
-                    "-p", "7356", 
-                    "--mode", "bookmark",
+                    "-y", "1"
+                    //"-h", "localhost", 
+                    //"-p", "7356", 
+                    //"--mode", "bookmark",
                     //"-f 429000000",
                     //"--min", "430000000", 
                     //"--max", "432000000",
-                    "--tags", "\"ponti\"",                 
-                    "-d", "2"
+                    //"--tags", "\"ponti\"",                 
+                    //"-d", "2"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceRoot}",

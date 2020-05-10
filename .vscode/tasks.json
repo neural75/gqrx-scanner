@@ -3,12 +3,12 @@
     // for the documentation about the tasks.json format
     "version": "2.0.0",
     "options": {
-            "cwd": "${workspaceRoot}/bin/Debug"
+      //      "cwd": "${workspaceRoot}/bin/Debug"
     },
 
     "tasks": [
         {
-            "taskName": "Build",
+            "label": "Build",
             "command": "make",
             "type": "shell",
             "group": {
@@ -17,7 +17,7 @@
             }
         },
         {
-            "taskName": "Clean",
+            "label": "Clean",
             "command": "make clean",
             "type": "shell",
             "group": "build",

@@ -62,7 +62,7 @@ SOFTWARE.
 #include <getopt.h>
 #include <ctype.h>
 #include <string.h>
-
+#include <errno.h>
 #include "gqrx-prot.h"
 
 #define NB_ENABLE    true
@@ -250,7 +250,7 @@ bool ParseInputOptions (int argc, char **argv)
         int option_index = 0;
 
 //LWVMOBILE: Adding new argument letters to this index
-        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y", 
+        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:", 
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -396,7 +396,19 @@ bool ParseInputOptions (int argc, char **argv)
             break;
 
             case 'y':
-                opt_date = 0; //LWVMOBILE: Not implemented yet, just defaulting a variable to 0 for now.
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+                errno = 0;
+                char *endptr = NULL;
+                opt_date = strtol(optarg,&endptr,10);
+                if (errno != 0)
+                {
+                    printf ("Error: -%c: Invalid date option\n", c);
+                    print_usage(argv[0]);
+                }
             break;                    
 
 //LWVMOBILE: End new entried
@@ -420,6 +432,7 @@ bool ParseInputOptions (int argc, char **argv)
                 print_usage(argv[0]);
         }
     }    
+    return true;
 }
 
 
@@ -505,10 +518,17 @@ time_t GetTime(char *timestamp)
 {
     time_t etime = time(NULL);
     struct tm *ltime = localtime (&etime);
-    //sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,    //LWVMOBILE: Going to attempt to switch around mm and dd to see what happens
-    //        ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                            //LWVMOBILE: Switches Print order to mm-dd-yy, may switch to yy-mm-dd
-    sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mon+1, ltime->tm_mday, ltime->tm_year%100,      //LWVMOBILE: Going to remove the +1 from the month to see what happens
-            ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                              //LWVMOBILE: Removing +1 seems to set month back one month, why does that happen?
+    switch (opt_date)
+    {
+	    case 0:
+    		sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mon+1, ltime->tm_mday, ltime->tm_year%100,      //LWVMOBILE: Going to remove the +1 from the month to see what happens
+            		ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                              //LWVMOBILE: Removing +1 seems to set month back one month, why does that happen?
+		break;
+	    case 1:
+	    	sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,    //LWVMOBILE: Going to attempt to switch around mm and dd to see what happens
+        	        ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                            //LWVMOBILE: Switches Print order to mm-dd-yy, may switch to yy-mm-dd
+		break;
+    }
     return etime;
 }
 // Calculate difference in time in [dd days][hh:][mm:][ss secs]
@@ -874,7 +894,7 @@ bool SaveFreq(freq_t freq_current)
             freq_current <  (SavedFrequencies[i].freq + tollerance)   )
         {
             // found match, loop for minimum delta
-            delta = abs(freq_current - SavedFrequencies[i].freq); 
+            delta = freq_current - SavedFrequencies[i].freq; 
             if ( delta < temp_delta )
             {
                 // Found a better match
@@ -959,8 +979,8 @@ bool IsBannedFreq (freq_t *freq_current)
             return true;
         }        
     }    
-    if (i >= BannedFreq_Max)
-        return false;
+    
+    return false;
 }
 
 
