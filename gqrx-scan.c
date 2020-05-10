@@ -563,13 +563,13 @@ time_t DiffTime(char *timestamp, time_t start_time)
 
     if (ltime->tm_min > 0)
     {
-        char min[10];
+        char min[16];
         sprintf(min, "%2.2d:", ltime->tm_min);
         strcat(timestamp, min);
     }
     if (ltime->tm_sec > 0)
     {
-        char sec[10];
+        char sec[16];
         sprintf(sec, "%2.2d sec", ltime->tm_sec);
         strcat(timestamp, sec);
     }
