@@ -1389,9 +1389,12 @@ int main(int argc, char **argv) {
     strcpy (to,   print_freq(opt_max_freq));
     printf ("Frequency range set from %s to %s.\n", from, to);
     
-    bookmarksfd = Open(g_bookmarksfile);
-    LoadFrequencies (bookmarksfd);
-
+    if (opt_scan_mode == bookmark)
+    {
+        bookmarksfd = Open(g_bookmarksfile);
+        LoadFrequencies (bookmarksfd);
+    }
+    
     if (opt_tag_search)
     {
         char str [1024];
