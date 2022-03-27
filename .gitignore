@@ -74,3 +74,4 @@ bin
 build
 gqrx-scan
 
+.vscode/c_cpp_properties.json
