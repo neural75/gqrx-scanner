@@ -120,6 +120,7 @@ int             opt_port = 0;
 freq_t          opt_freq = 0;
 freq_t          opt_min_freq = 0;
 freq_t          opt_max_freq = 0;
+freq_t          opt_scan_bw = g_default_scan_bw;
 long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250 attempt to fix 'no delay argument given' stoppage on bookmark scan
 //LWVMOBILE: New variables inserted here
 long            opt_speed = 250000;
@@ -162,6 +163,7 @@ void print_usage ( char *name )
     printf ("                               Default: the current frequency tuned in Gqrx Incompatible with -b, -e\n");
     printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
+    printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
 //LWVMOBILE: Adding some descriptions for new switches here
     printf ("-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.\n");
@@ -238,6 +240,7 @@ bool ParseInputOptions (int argc, char **argv)
           {"freq",    required_argument, 0, 'f'},
           {"min",     required_argument, 0, 'b'},
           {"max",     required_argument, 0, 'e'},
+          {"step",    required_argument, 0, 's'},
           {"tags",    required_argument, 0, 't'},
           {"delay",   required_argument, 0, 'd'},
 //LWVMOBILE: adding new entries here
@@ -250,7 +253,7 @@ bool ParseInputOptions (int argc, char **argv)
         int option_index = 0;
 
 //LWVMOBILE: Adding new argument letters to this index
-        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:", 
+        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:s:", 
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -425,6 +428,19 @@ bool ParseInputOptions (int argc, char **argv)
                 optind++;
                 opt_tag_search = true;
             break;
+            case 's':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+
+                if ((opt_scan_bw = atoll(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid frequency step\n", c);
+                    print_usage(argv[0]);
+                }
+                break;
             case '?':
             /* getopt_long already printed an error message. */
             case ':':
@@ -685,7 +701,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     // restart scanning
     *current_freq+=g_ban_tollerance;
     // round up to next near tenth of khz  145892125 -> 145900000
-    *current_freq = ceil( *current_freq / 10000.0 ) * 10000.0; 
+    *current_freq = ceil( *current_freq / (double)opt_scan_bw ) * opt_scan_bw; 
     
 #ifndef OSX
     __fpurge(stdin);
@@ -1302,7 +1318,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 sweep_count = 0; // reactivates sweep scan
                 saved_cycle = false;
                 current_freq = last_freq;
-                current_freq = ceil( current_freq / 10000.0 ) * 10000.0; 
+                current_freq = ceil( current_freq / (double)opt_scan_bw ) * opt_scan_bw;
             }
             else // found one
             {
@@ -1422,7 +1438,7 @@ int main(int argc, char **argv) {
     
     if (opt_scan_mode == sweep)
     {
-        ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, g_default_scan_bw);
+        ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_scan_bw);
     }
     else
     {
