@@ -23,14 +23,14 @@ SOFTWARE.
 */
 
 
-/* 
+/*
  * gqrx-scanner
  * A simple frequency scanner for gqrx
- * 
- * usage: gqrx-scanner [-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>] 
+ *
+ * usage: gqrx-scanner [-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
  *                  [-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
  *                  [-d|--delay <lingering time on signals>]
- *                  [-t|--tags <"tag1|tag2|...">]       
+ *                  [-t|--tags <"tag1|tag2|...">]
  *                  [-x|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
  */
 #define _GNU_SOURCE // strcasestr
@@ -38,7 +38,7 @@ SOFTWARE.
 #ifndef OSX
 #include <stdio_ext.h>
 #else
-#endif 
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -46,7 +46,7 @@ SOFTWARE.
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netdb.h> 
+#include <netdb.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -76,7 +76,7 @@ typedef struct {
     int count; // hit count on sweep scan
     int miss;  // miss count on sweep scan
     char descr[BUFSIZE]; // ugly buffer for descriptions: TODO convert it in a pointer
-    char *tags[TAG_MAX]; // tags 
+    char *tags[TAG_MAX]; // tags
     int   tag_max;
 }FREQ;
 
@@ -104,7 +104,7 @@ static char freq_string[BUFSIZE] = {0};
 //
 const char     *g_hostname          = "localhost";
 const int       g_portno            = 7356;
-const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq. 
+const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq.
 const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
 const long      g_delay             = 2500000; // 2 sec //LWVMOBILE: Doesn't this default value equal 20 seconds? Changing to a lower number. Was 2000000000
@@ -124,7 +124,7 @@ long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250
 //LWVMOBILE: New variables inserted here
 long            opt_speed = 250000;
 long            opt_date = 0;
-//LWVMOBILE; End new variables.  
+//LWVMOBILE; End new variables.
 SCAN_MODE       opt_scan_mode = sweep;
 bool            opt_tag_search = false;
 char           *opt_tags[TAG_MAX] = {0};
@@ -133,6 +133,8 @@ bool            opt_disable_store = false;
 // only for debug
 bool            opt_verbose = false;
 
+// set squelch delta
+double          opt_squelch_delta = 0.0;
 
 //
 // Local Prototypes
@@ -142,7 +144,7 @@ bool IsBannedFreq (freq_t *freq_current);
 void ClearAllBans ( void );
 
 //
-// ParseInputOptions 
+// ParseInputOptions
 //
 void print_usage ( char *name )
 {
@@ -171,6 +173,9 @@ void print_usage ( char *name )
     printf ("                               1 = dd-mm-yy\n");
     printf ("                               2 = yy-mm-dd\n");
     printf ("                               This feature has not been implemented yet.\n");
+    printf ("-s, --squelch_delta <dB>     If set creates bottom squelch just\n");
+    printf ("                             for listening. It may reduce unnecessary squelch audio supress.\n");
+    printf ("                             Default: 0.0\n");
 //LWVMOBILE: End of new switches here
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
@@ -178,7 +183,7 @@ void print_usage ( char *name )
     printf ("                               Works only with -m bookmark scan mode\n");
     //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
-    printf ("--help                       This help message.\n");    
+    printf ("--help                       This help message.\n");
     printf ("\n");
     printf ("Examples:\n");
     printf ("%s -m bookmark --min 430000000 --max 431000000 --tags \"DMR|Radio Links\"\n", name);
@@ -214,7 +219,7 @@ bool ParseTags (char *tags)
     {
         printf ("Error: -t option requires a '|' separator for list of tags.\n");
         return false;
-    }    
+    }
     return true;
 }
 
@@ -243,20 +248,21 @@ bool ParseInputOptions (int argc, char **argv)
 //LWVMOBILE: adding new entries here
           {"speed",   required_argument, 0, 'x'},
           {"date",    required_argument, 0, 'y'},
-//LWVMOBILE: end of new entries                    
+          {"squelch_delta",    required_argument, 0, 's'},
+//LWVMOBILE: end of new entries
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
 //LWVMOBILE: Adding new argument letters to this index
-        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:", 
+        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:s:",
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
-        //          if a following option is encountered getopt_long returns this option as the argument in optarg 
+        //          if a following option is encountered getopt_long returns this option as the argument in optarg
         //          instead of error, but if there is only one option with a missing arg then it returns an error.
-        //          
+        //
 
         /* Detect the end of the options. */
         if (c == -1)
@@ -290,7 +296,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-            
+
                 if ((opt_port = atoi (optarg)) == 0)
                 {
                     printf("Error: -%c: invalid port\n", c);
@@ -303,7 +309,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-            
+
                 if (strcmp (optarg, "sweep") == 0)
                     opt_scan_mode = sweep;
                 else if (strcmp (optarg, "bookmark") == 0)
@@ -320,11 +326,11 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-            
+
                 if ((opt_freq = atoll(optarg)) == 0)
                 {
                     printf ("Error: -%c: Invalid frequency\n", c);
-                    print_usage(argv[0]);                    
+                    print_usage(argv[0]);
                 }
                 if (opt_freq > g_freq_delta)
                 {
@@ -334,7 +340,7 @@ bool ParseInputOptions (int argc, char **argv)
                 else
                 {
                     printf ("Error: -%c: Invalid frequency\n", c);
-                    print_usage(argv[0]);                    
+                    print_usage(argv[0]);
                 }
             break;
             case 'b':
@@ -347,9 +353,9 @@ bool ParseInputOptions (int argc, char **argv)
                 if ((opt_min_freq = atoll(optarg)) == 0)
                 {
                     printf ("Error: -%c: Invalid frequency\n", c);
-                    print_usage(argv[0]);                    
+                    print_usage(argv[0]);
                 }
-                
+
             break;
             case 'e':
                 if (optarg[0] == '-')
@@ -357,12 +363,12 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-            
+
                 if ((opt_max_freq = atoll(optarg)) == 0)
                 {
                     printf ("Error: -%c: Invalid frequency\n", c);
-                    print_usage(argv[0]);                    
-                }                
+                    print_usage(argv[0]);
+                }
             break;
             case 'd':
                 if (optarg[0] == '-')
@@ -370,7 +376,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-            
+
                 if ((opt_delay = atol(optarg)) == 0)
                 {
                     printf ("Error: -%c: Invalid delay\n", c);
@@ -386,7 +392,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-            
+
                 if ((opt_speed = atol(optarg)) == 0)
                 {
                     printf ("Error: -%c: Invalid speed\n", c);
@@ -409,7 +415,20 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid date option\n", c);
                     print_usage(argv[0]);
                 }
-            break;                    
+            break;
+            case 's':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+
+                if ((opt_squelch_delta = atof(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid squelch level\n", c);
+                    print_usage(argv[0]);
+                }
+            break;
 
 //LWVMOBILE: End new entried
             case 't':
@@ -431,7 +450,7 @@ bool ParseInputOptions (int argc, char **argv)
             default:
                 print_usage(argv[0]);
         }
-    }    
+    }
     return true;
 }
 
@@ -445,7 +464,7 @@ bool ParseInputOptions (int argc, char **argv)
 char * print_freq (freq_t freq)
 {
     // fist round up to khz
-    freq = round ( freq / 1000.0 ) * 1000.0; 
+    freq = round ( freq / 1000.0 ) * 1000.0;
     long Ghz = freq/1000000000;
     long Mhz = (freq/1000000)%1000;
     long Khz = (freq/1000)%1000;
@@ -483,7 +502,7 @@ int kbhit(void)
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds); //STDIN_FILENO is 0
     select(STDIN_FILENO+1, &fds, NULL, NULL, &tv);
-    return FD_ISSET(STDIN_FILENO, &fds);    
+    return FD_ISSET(STDIN_FILENO, &fds);
 }
 //
 // Set/Reset non blocking mode
@@ -491,10 +510,10 @@ int kbhit(void)
 void nonblock(int state)
 {
     struct termios ttystate;
- 
+
     //get the terminal state
     tcgetattr(STDIN_FILENO, &ttystate);
- 
+
     if (state==NB_ENABLE)
     {
         //turn off canonical mode
@@ -576,7 +595,7 @@ time_t DiffTime(char *timestamp, time_t start_time)
     return elapssed;
 }
 
-// LWVMOBILE: I removed all calculations for months, days, and hours. Something in the days or hours calculation makes it roll backwards to 30 days, perhaps the GMT time offset may need time zone feature. 
+// LWVMOBILE: I removed all calculations for months, days, and hours. Something in the days or hours calculation makes it roll backwards to 30 days, perhaps the GMT time offset may need time zone feature.
 // LWVMOBILE: Seconds seems to be 'calculated' by only looking at the difference initial seconds reading and ending, in other words it rolls 0 to 60 and then to 0 again, doesn't accumulate upwards.
 // LWVMOBILE: Going to leave this as just minutes and secods, I would do seconds only, but time is calculated using simple subtraction from each field as opposed to counting upwards in seconds.
 
@@ -590,19 +609,19 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 {
     double    squelch;
     double  level;
-    long    sleep_time = 0, sleep = 100000; // 100 ms 
+    long    sleep_time = 0, sleep = 100000; // 100 ms
     int     exit = 0;
     char    c;
     bool    skip = false;
     bool    pause = false;
-    
+
 #ifndef OSX
     __fpurge(stdin);
 #else
     fpurge(stdin);
 #endif
     nonblock(NB_ENABLE);
-    
+
     do
     {
         GetCurrentFreq(sockfd,  current_freq);
@@ -619,7 +638,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
                 {
                     exit = 1; // exit
                     skip = true;
-                    break; 
+                    break;
                 }
                 case 'b':
                 {
@@ -639,13 +658,13 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
                 case 'p':
                 {
                     // pause until another 'p'
-                    pause ^= true; // switch pause mode 
+                    pause ^= true; // switch pause mode
                     exit = 0;
                     break;
                 }
                 default:
                     exit = 0;
-                
+
             }
             if (exit == 1)
                 break;
@@ -660,39 +679,39 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         // exit = 0
         if (level < squelch )
         {
-            
-        
-            // Signal drop below the threshold, start counting sleep time 
-            sleep_time += sleep; 
+
+
+            // Signal drop below the threshold, start counting sleep time
+            sleep_time += sleep;
             if (sleep_time > delay)
             {
-            
-                exit = 1; 
-                skip = false; 
+
+                exit = 1;
+                skip = false;
             }
         }
-        else 
+        else
         {
-            sleep_time = 0; // 
+            sleep_time = 0; //
         }
         // someone is tx'ing
-        usleep(sleep); 
-    } while ( !exit ) ; 
+        usleep(sleep);
+    } while ( !exit ) ;
 
     nonblock(NB_DISABLE);
-    
+
 
     // restart scanning
     *current_freq+=g_ban_tollerance;
     // round up to next near tenth of khz  145892125 -> 145900000
-    *current_freq = ceil( *current_freq / 10000.0 ) * 10000.0; 
-    
+    *current_freq = ceil( *current_freq / 10000.0 ) * 10000.0;
+
 #ifndef OSX
     __fpurge(stdin);
 #else
     fpurge(stdin);
 #endif
-    return skip; 
+    return skip;
 }
 
 //
@@ -747,8 +766,8 @@ bool LoadFrequencies (FILE *bookmarksfd)
         {
             start = true;
             continue;
-        }   
-        
+        }
+
         if (start)
         {
             char * token = strtok(line, "; "); // freq
@@ -813,7 +832,7 @@ freq_t FilterFrequency (int idx)
     return current_freq;
 }
 
-bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max)
+bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta)
 {
     freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
@@ -840,8 +859,8 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
             if (IsBannedFreq(&current_freq))
                 continue;
             if ( ( ( current_freq >= freq_min) &&         // in the valid range
-                   ( current_freq <  freq_max)    ) ||  
-                 (freq_min == freq_max)                )  // or using the entire frequencies 
+                   ( current_freq <  freq_max)    ) ||
+                 (freq_min == freq_max)                )  // or using the entire frequencies
                 {
                     // Found a bookmark in the range
                     SetFreq(sockfd, current_freq);
@@ -854,23 +873,26 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     if (level >= squelch)
                     {
                         time_t hit_time = GetTime(timestamp);
-                        printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ", 
-                                timestamp, print_freq(current_freq), 
+                        SetSquelchLevel(sockfd, squelch - squelch_delta);
+                        printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
+                                timestamp, print_freq(current_freq),
                                 Frequencies[i].descr, level, squelch);
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
-                        printf (" [elapsed time %s]\n", timestamp);      
-                                                                        
-                                                                        
+                        printf (" [elapsed time %s]\n", timestamp);
+                        GetSquelchLevel(sockfd, &squelch);
+                        SetSquelchLevel(sockfd, squelch + squelch_delta);
+
+
                         fflush(stdout);
                     }
-                    else    
+                    else
                         skip = false;
-                    
+
                 }
         }
-        
+
     }
 
 }
@@ -894,7 +916,7 @@ bool SaveFreq(freq_t freq_current)
             freq_current <  (SavedFrequencies[i].freq + tollerance)   )
         {
             // found match, loop for minimum delta
-            delta = freq_current - SavedFrequencies[i].freq; 
+            delta = freq_current - SavedFrequencies[i].freq;
             if ( delta < temp_delta )
             {
                 // Found a better match
@@ -912,7 +934,7 @@ bool SaveFreq(freq_t freq_current)
         SavedFrequencies[SavedFreq_Max].miss  = 0;
         SavedFreq_Max++;
         if (SavedFreq_Max >= SAVED_FREQ_MAX)
-            SavedFreq_Max = 0; // restart from scratch ? 
+            SavedFreq_Max = 0; // restart from scratch ?
         return true;
     }
 
@@ -922,13 +944,13 @@ bool SaveFreq(freq_t freq_current)
     SavedFrequencies[temp_i].freq = (( ((freq_t)SavedFrequencies[temp_i].freq * count ) + freq_current ) / (count + 1));
     SavedFrequencies[temp_i].count++;
     SavedFrequencies[temp_i].miss = 0;// reset miss count
-    
+
 
     return true;
 }
 
 //
-// Ban a frequency found 
+// Ban a frequency found
 //
 bool BanFreq (freq_t freq_current)
 {
@@ -971,15 +993,15 @@ bool IsBannedFreq (freq_t *freq_current)
         if (*freq_current >= (BannedFrequencies[i].freq - g_ban_tollerance) &&
             *freq_current <  (BannedFrequencies[i].freq + g_ban_tollerance)   )
         {
-            // scanning 
+            // scanning
             *freq_current+= (g_ban_tollerance * 2); // avoid jumping neearby a carrier
             // round up to next near tenth of khz  145892125 -> 145900000
-            *freq_current = ceil( *freq_current / 10000.0 ) * 10000.0;      
-            IsBannedFreq (freq_current);       
+            *freq_current = ceil( *freq_current / 10000.0 ) * 10000.0;
+            IsBannedFreq (freq_current);
             return true;
-        }        
-    }    
-    
+        }
+    }
+
     return false;
 }
 
@@ -997,7 +1019,7 @@ bool Debounce (int sockfd, freq_t current_freq, double level)
 
     if (current_level < squelch )
         return false; // signal lost or ghost
-    else    
+    else
         return true;
 
 }
@@ -1020,7 +1042,7 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
     double squelch = 0;
 
     GetSquelchLevel(sockfd, &squelch);
-    
+
     double level = 0;
     for (current_freq = freq_min; current_freq < freq_max; current_freq += freq_steps)
     {
@@ -1051,8 +1073,8 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
     l = start + (end-start)/2;
     current_freq = levels[l].freq;
     SetFreq(sockfd, current_freq);
-    usleep(150000);  
-   
+    usleep(150000);
+
     // before second pass fine tuning we check if the frequency is already known (and tuned with a mean value computed)
     // See SaveFreq
     freq_t tollerance = 7000;
@@ -1071,26 +1093,26 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
             }
         }
     }
-    
+
     if (found)
     {
         SetFreq(sockfd, current_freq);
-        usleep(150000);      
+        usleep(150000);
         // Cheating: here I return the rough value from the first pass to avoid stucking on possibly wrong freq.
-        return levels[l].freq;    
+        return levels[l].freq;
     }
 
     // Second pass - Fine tuning + - 5Khz (freq_steps input) with 1 khz steps
-    // Dived in two half, follow one until the level decreases if so follow the second half 
+    // Dived in two half, follow one until the level decreases if so follow the second half
     // (hopefully this reduces the num of steps), tries to average out spikes, 3 sample
     double reference_level;
-    GetSignalLevelEx( sockfd, &reference_level, 3);       
+    GetSignalLevelEx( sockfd, &reference_level, 3);
     freq_t   reference_freq  = current_freq;
     freq_min   = current_freq - 5000;
     freq_max   = current_freq + 5000;
-    freq_steps = 1000; // 1 Khz fine tuning 
+    freq_steps = 1000; // 1 Khz fine tuning
     max_levels = (freq_max - freq_min) / freq_steps ;
-    LEVELS levels2[max_levels];    
+    LEVELS levels2[max_levels];
     l = 0;
     // upper half
     for (current_freq = reference_freq + freq_steps; current_freq < freq_max; current_freq += freq_steps)
@@ -1103,7 +1125,7 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
         if (level < reference_level)
         {
             // this way the signal is decreasing, stop
-            break; 
+            break;
         }
         levels2[l].level = level;
         levels2[l].freq  = current_freq;
@@ -1122,7 +1144,7 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
         if (level < reference_level)
         {
             // this way signal is decreasing, stop
-            break; 
+            break;
         }
         levels2[l].level = level;
         levels2[l].freq  = current_freq;
@@ -1159,7 +1181,7 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
 
 }
 
-bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval)
+bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval, double squelch_delta)
 {
     freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
@@ -1175,23 +1197,23 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
     int sweep_count = 0;
     freq_t last_freq;
     bool saved_cycle = false;
-    // minimum hit threshold on frequency already seen (count): above this the freq is a candidate 
+    // minimum hit threshold on frequency already seen (count): above this the freq is a candidate
     int min_hit_threshold = 2;
     // maximum miss threshold on frequencies not seen anymore: above this the candidate count is decremented
     // note: during monitoring on active freq the counter can reach high values so this threshold should not be too high
     // otherwise the chance to exclude the freq is very low and will continue to monitor even after prolonged inactive time
-    int max_miss_threshold = 20; 
-    long sleep_cyle         = 10000 ; // wait 10ms after setting freq to get signal level 
+    int max_miss_threshold = 20;
+    long sleep_cyle         = 10000 ; // wait 10ms after setting freq to get signal level
     long sleep_cyle_saved   = 85000 ; // skipping freqeuency need more time to get signal level
     long sleep_cycle_active = 500000; // skipping from active frequency need more time to wait squelch level to kick in
     bool skip = false;   // user input
     char timestamp[BUFSIZE] = {0};
     int  success_counter    = 0;  // number of correctly acquired signals, reset on bad signals or reaching success_factor
-    int  success_factor     = 5; // improving sleep cycle every success_factor of times   
+    int  success_factor     = 5; // improving sleep cycle every success_factor of times
 
     while (true)
     {
-        IsBannedFreq(&current_freq); // test and change current_frequency to next available slot; 
+        IsBannedFreq(&current_freq); // test and change current_frequency to next available slot;
         SetFreq(sockfd, current_freq);
         if (saved_cycle)
             usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
@@ -1202,6 +1224,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
         GetSignalLevelEx(sockfd, &level, 3 );
         if (level >= squelch)
         {
+            SetSquelchLevel(sockfd, squelch - squelch_delta);
             // we have a possible match, but sometimes level oscillates after a squelch miss
             bool still_good = Debounce(sockfd, current_freq, level);
             if (!still_good)
@@ -1222,18 +1245,18 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 {
                     current_freq-=(freq_interval * 3);
                     if (current_freq < freq_min)
-                        current_freq = freq_max - (freq_interval * 3);                    
+                        current_freq = freq_max - (freq_interval * 3);
                 }
-                continue; 
+                continue;
             }
             else
             {
                 // Frequency acquired successfully
-                // Or.. we could have jumped on another frequency with a valid signal nearby. 
+                // Or.. we could have jumped on another frequency with a valid signal nearby.
                 success_counter++;
-                if (success_counter > success_factor) 
+                if (success_counter > success_factor)
                 {
-                    // Increase speed a little bit in order to compensates signal lost because of bad luck 
+                    // Increase speed a little bit in order to compensates signal lost because of bad luck
                     // while we moved the frequency (signal disappearing)
                     sleep_cyle-= 1000; // add a reward
                     if (sleep_cyle < 10000)
@@ -1253,10 +1276,10 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             }
             else
             {
-                SaveFreq(current_freq);    
+                SaveFreq(current_freq);
                 time_t hit_time = GetTime(timestamp);
-                printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ", 
-                        timestamp, print_freq(current_freq), 
+                printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
+                        timestamp, print_freq(current_freq),
                         level, squelch);
                 fflush(stdout);
                 // Wait user input or delay time after signal lost
@@ -1265,6 +1288,9 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 printf (" [elapsed time %s]\n", timestamp);
                 fflush(stdout);
             }
+
+            GetSquelchLevel(sockfd, &squelch);
+            SetSquelchLevel(sockfd, squelch + squelch_delta);
         }
         else
         {
@@ -1275,7 +1301,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 // miss count on already seen frequency
                 if (++SavedFrequencies[current_saved_idx].miss > max_miss_threshold)
                 {
-                    SavedFrequencies[current_saved_idx].count--; 
+                    SavedFrequencies[current_saved_idx].count--;
                     SavedFrequencies[current_saved_idx].miss = 0;
                 }
             }
@@ -1291,7 +1317,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 saved_cycle = true;
             }
             // search candidates into saved frequencies
-            while ( (SavedFrequencies[saved_idx].count < min_hit_threshold) && //hit threshold 
+            while ( (SavedFrequencies[saved_idx].count < min_hit_threshold) && //hit threshold
                     (saved_idx < SavedFreq_Max) )
             {
                 saved_idx++;
@@ -1302,7 +1328,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 sweep_count = 0; // reactivates sweep scan
                 saved_cycle = false;
                 current_freq = last_freq;
-                current_freq = ceil( current_freq / 10000.0 ) * 10000.0; 
+                current_freq = ceil( current_freq / 10000.0 ) * 10000.0;
             }
             else // found one
             {
@@ -1352,12 +1378,12 @@ int main(int argc, char **argv) {
         (opt_min_freq > opt_max_freq)                        || // bad range or only min specified
         (opt_min_freq == 0 && opt_max_freq > 0)              || // or  only max specified
         ((opt_min_freq != 0 && opt_max_freq != 0) &&            // or they are equal but different from 0
-         (opt_min_freq == opt_max_freq)                  ) 
+         (opt_min_freq == opt_max_freq)                  )
        ) // or only max specified
     {
         strcpy (from, print_freq(opt_min_freq));
-        strcpy (to,   print_freq(opt_max_freq)); 
-        printf ("Error: Invalid frequency range: begin:%s, end=%s.\n", from, to); 
+        strcpy (to,   print_freq(opt_max_freq));
+        printf ("Error: Invalid frequency range: begin:%s, end=%s.\n", from, to);
         printf ("       Please specify '-f <freq>' or '-b <begin_freq> -e <end_freq>.\n");
         print_usage(argv[0]);
     }
@@ -1388,13 +1414,13 @@ int main(int argc, char **argv) {
     strcpy (from, print_freq(opt_min_freq));
     strcpy (to,   print_freq(opt_max_freq));
     printf ("Frequency range set from %s to %s.\n", from, to);
-    
+
     if (opt_scan_mode == bookmark)
     {
         bookmarksfd = Open(g_bookmarksfile);
         LoadFrequencies (bookmarksfd);
     }
-    
+
     if (opt_tag_search)
     {
         char str [1024];
@@ -1419,14 +1445,14 @@ int main(int argc, char **argv) {
         }
         printf ("%d candidate frequencies found.\n", count);
     }
-    
+
     if (opt_scan_mode == sweep)
     {
-        ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, g_default_scan_bw);
+        ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, g_default_scan_bw, opt_squelch_delta);
     }
     else
     {
-        ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq);
+        ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_squelch_delta);
     }
 
     fclose (bookmarksfd);
