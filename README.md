@@ -3,18 +3,18 @@ A frequency scanner for [Gqrx Software Defined Radio](http://gqrx.dk/) receiver
 
 ## Description
 
-gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks (--mode bookmark) to look for the already stored frequencies or, in a free sweep scan mode (--mode sweep), to explore the band within a specified frequency range (--min, --max options). 
+gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks (--mode bookmark) to look for the already stored frequencies or, in a free sweep scan mode (--mode sweep), to explore the band within a specified frequency range (--min, --max options).
 
-The sweep scan uses an adaptive algorithm to remember the active frequencies encountered during the sweep, that prioritizes active stations without stopping to look for new ones. 
+The sweep scan uses an adaptive algorithm to remember the active frequencies encountered during the sweep, that prioritizes active stations without stopping to look for new ones.
 
 Gqrx Squelch level is used as the threshold, when the signal is strong enough it stops the scanner on the frequency found.
-After the signal is lost the scanner waits a configurable ammount of time and restart the loop (--delay option). 
+After the signal is lost the scanner waits a configurable ammount of time and restart the loop (--delay option).
 
 In sweep mode the scan of the band is performed fast (well, as fast as it can), self asjusting the scanning speed. On signal detection a fine tuning is performed to pinpoint the nearest carrier frequency (subdivision of upper and lower limits with increasing precision) and, for the already seen carriers, a previous value is used to avoid fine tuning at every hit. This value is also averaged out with the new one in order to converge eventually to the exact frequency in less time (after 4 hits of the same frequency).
 
 ## Features
 * Support for Gqrx bookmarks file
-* Fast sweep scan with adaptive monitor of the most active stations 
+* Fast sweep scan with adaptive monitor of the most active stations
 * Frequency range constrained scan (also for bookmarks)
 * Multiple Tag based search in bookmark scan mode ("Tag1|Tag2|TagX").
 * Automatic Frequency Locking in sweep scan mode
@@ -26,7 +26,7 @@ Gqrx Remote Protocol must be enabled: Tools->Remote Control. See [this](http://g
 ## Notes on Gqrx settings
 It is advisable to disable AGC during the scan: adjust the fixed gain lowering the noise floor to at least -60/-70 dBFS and set the squelch level to -50/-40 dBFS, depending on the band activities and noise levels.
 
-The best results are obtained in relative quiet frequencies with sporadic transmissions. If the band is cluttered with harmonics and other types of persistent noise, avoid the sweep scan and use the bookmarks mode with a higher squelch level (or use the 'b' key to ban a frequency from the scan). 
+The best results are obtained in relative quiet frequencies with sporadic transmissions. If the band is cluttered with harmonics and other types of persistent noise, avoid the sweep scan and use the bookmarks mode with a higher squelch level (or use the 'b' key to ban a frequency from the scan).
 
 In sweep mode use a limited bandwidth of about 2 MHz in order to avoid VFO and noise floor levels chainging during the sweep.
 If you don't provide the --min, --max option, set the demodulator frequency to the middle of the screen and start from there in order to avoid the panadapter to move during the scan.
@@ -59,6 +59,9 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
                                1 = dd-mm-yy
                                2 = yy-mm-dd
                                This feature has not been implemented yet.
+-s, --squelch_delta <dB>     If set creates bottom squelch just
+                             for listening. It may reduce unnecessary squelch audio supress.
+                             Default: 0.0
 -t, --tags <"tags">          Filter signals. Match only on frequencies marked with a tag found in "tags"
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
                                tags are case insensitive and match also for partial string contained in a tag
@@ -68,19 +71,19 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 
 ```
 
-## Interactive Commands 
+## Interactive Commands
 These keyboard shortcuts are available during scan:
 ```
 [space] OR [enter]  :   Skips a locked frequency (listening to the next).
-'b'                 :   Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq. 
+'b'                 :   Bans a locked frequency, the bandwidth banned is about 10 Khz from the locked freq.
 'c'                 :   Clears all banned frequencies.
-'p'                 :   Pauses scan on locked frequency, 'p' again to unpause. 
+'p'                 :   Pauses scan on locked frequency, 'p' again to unpause.
 ```
 
 ## Examples
 Performs a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx:
 ```
-./gqrx-scanner 
+./gqrx-scanner
 ```
 <br>
 
@@ -104,7 +107,7 @@ Performs a scan using Gqrx bookmarks, monitoring only the frequencies tagged wit
 <br>
 
 Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires:
-```	
+```
 ./gqrx-scanner --min 430000000 --max 431000000 -d 3000
 ```
 
@@ -121,7 +124,7 @@ Frequency range set from 429.000 MHz to 431.000 MHz.
 
 ## Build and Install
 ```
-cmake . 
+cmake .
 make
 sudo make install
 ```
@@ -144,7 +147,7 @@ sudo make uninstall
 
 
 ## TODOs
-* set modulation in bookmark search 
+* set modulation in bookmark search
 * automatic audio recording on signal detection
 * parsable output in csv?
 

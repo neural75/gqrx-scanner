@@ -28,7 +28,7 @@ SOFTWARE.
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netdb.h> 
+#include <netdb.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -42,7 +42,7 @@ SOFTWARE.
 #include <math.h>
 #include "gqrx-prot.h"
 
-// 
+//
 // error - wrapper for perror
 //
 void error(char *msg) {
@@ -58,11 +58,11 @@ int Connect (char *hostname, int portno)
     int sockfd, n;
     struct sockaddr_in serveraddr;
     struct hostent *server;
-  
-    
+
+
     /* socket: create the socket */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) 
+    if (sockfd < 0)
         error("ERROR opening socket");
 
     /* gethostbyname: get the server's DNS entry */
@@ -75,12 +75,12 @@ int Connect (char *hostname, int portno)
     /* build the server's Internet address */
     bzero((char *) &serveraddr, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr, 
+    bcopy((char *)server->h_addr,
 	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
     serveraddr.sin_port = htons(portno);
 
     /* connect: create a connection with the server */
-    if (connect(sockfd, (const struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0) 
+    if (connect(sockfd, (const struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0)
       error("ERROR connecting");
 
     return sockfd;
@@ -93,7 +93,7 @@ bool Send(int sockfd, char *buf)
     int n;
 
     n = write(sockfd, buf, strlen(buf));
-    if (n < 0) 
+    if (n < 0)
       error("ERROR writing to socket");
     return true;
 }
@@ -106,7 +106,7 @@ bool Recv(int sockfd, char *buf)
     int n;
 
     n = read(sockfd, buf, BUFSIZE);
-    if (n < 0) 
+    if (n < 0)
       error("ERROR reading from socket");
     buf[n]= '\0';
     return true;
@@ -119,27 +119,27 @@ bool Recv(int sockfd, char *buf)
 bool GetCurrentFreq(int sockfd, freq_t *freq)
 {
     char buf[BUFSIZE];
-    
+
     Send(sockfd, "f\n");
     Recv(sockfd, buf);
 
     if (strcmp(buf, "RPRT 1") == 0 )
         return false;
-    
+
     sscanf(buf, "%llu", freq);
     return true;
 }
 bool SetFreq(int sockfd, freq_t freq)
 {
     char buf[BUFSIZE];
-    
+
     sprintf (buf, "F %llu\n", freq);
     Send(sockfd, buf);
     Recv(sockfd, buf);
 
     if (strcmp(buf, "RPRT 1") == 0 )
         return false;
-    
+
     freq_t freq_current = 0;
     do
     {
@@ -152,16 +152,16 @@ bool SetFreq(int sockfd, freq_t freq)
 bool GetSignalLevel(int sockfd, double *dBFS)
 {
     char buf[BUFSIZE];
-    
+
     Send(sockfd, "l\n");
     Recv(sockfd, buf);
 
     if (strcmp(buf, "RPRT 1") == 0 )
         return false;
-    
+
     sscanf(buf, "%lf", dBFS);
     *dBFS = round((*dBFS) * 10)/10;
-    
+
     if (*dBFS == 0.0)
         return false;
     return true;
@@ -170,15 +170,29 @@ bool GetSignalLevel(int sockfd, double *dBFS)
 bool GetSquelchLevel(int sockfd, double *dBFS)
 {
     char buf[BUFSIZE];
-    
+
     Send(sockfd, "l SQL\n");
     Recv(sockfd, buf);
 
     if (strcmp(buf, "RPRT 1") == 0 )
         return false;
-    
+
     sscanf(buf, "%lf", dBFS);
     *dBFS = round((*dBFS) * 10)/10;
+
+    return true;
+}
+
+bool SetSquelchLevel(int sockfd, double dBFS)
+{
+    char buf[BUFSIZE];
+
+    sprintf (buf, "L SQL %f\n", dBFS);
+    Send(sockfd, buf);
+    Recv(sockfd, buf);
+
+    if (strcmp(buf, "RPRT 1") == 0 )
+        return false;
 
     return true;
 }
@@ -194,7 +208,7 @@ bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp)
     for (int i = 0; i < n_samp; i++)
     {
         if ( GetSignalLevel(sockfd, &temp_level) )
-            *dBFS = *dBFS + temp_level; 
+            *dBFS = *dBFS + temp_level;
         else
             errors++;
         usleep(1000);
