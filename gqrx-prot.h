@@ -32,7 +32,7 @@ SOFTWARE.
 typedef unsigned long long freq_t;
 
 
-// 
+//
 // error - wrapper for perror
 //
 void error(char *msg);
@@ -59,6 +59,7 @@ bool GetCurrentFreq(int sockfd, freq_t *freq);
 bool SetFreq(int sockfd, freq_t freq);
 bool GetSignalLevel(int sockfd, double *dBFS);
 bool GetSquelchLevel(int sockfd, double *dBFS);
+bool SetSquelchLevel(int sockfd, double dBFS);
 bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp);
 
 
