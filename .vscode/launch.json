@@ -5,16 +5,17 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceRoot}/bin/gqrx-scanner",
+            "program": "${workspaceRoot}/bin/Debug/gqrx-scanner",
             "args": 
             [
-                    "-y", "1"
+                    "-y", "1",
                     //"-h", "localhost", 
                     //"-p", "7356", 
                     //"--mode", "bookmark",
                     //"-f 429000000",
-                    //"--min", "430000000", 
-                    //"--max", "432000000",
+                    "--min", "460000000", 
+                    "--max", "463000000",
+                    "-vvv",
                     //"--tags", "\"ponti\"",                 
                     //"-d", "2"
             ],
@@ -27,7 +28,7 @@
                 {
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
+                    "ignoreFailures": false
                 }
             ]
         }
