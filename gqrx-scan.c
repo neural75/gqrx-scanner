@@ -167,18 +167,14 @@ void print_usage ( char *name )
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
-//LWVMOBILE: Adding some descriptions for new switches here
     printf ("-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.\n");
     printf ("                               If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed\n");
     printf ("-y  --date                   Date Format, default is 0.\n");
     printf ("                               0 = mm-dd-yy\n");
     printf ("                               1 = dd-mm-yy\n");
-    printf ("                               2 = yy-mm-dd\n");
-    printf ("                               This feature has not been implemented yet.\n");
     printf ("-q, --squelch_delta <dB>     If set creates bottom squelch just\n");
     printf ("                             for listening. It may reduce unnecessary squelch audio supress.\n");
     printf ("                             Default: 0.0\n");
-//LWVMOBILE: End of new switches here
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
@@ -248,17 +244,14 @@ bool ParseInputOptions (int argc, char **argv)
           {"step",    required_argument, 0, 's'},
           {"tags",    required_argument, 0, 't'},
           {"delay",   required_argument, 0, 'd'},
-//LWVMOBILE: adding new entries here
           {"speed",   required_argument, 0, 'x'},
           {"date",    required_argument, 0, 'y'},
           {"squelch_delta",    required_argument, 0, 's'},
-//LWVMOBILE: end of new entries
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-//LWVMOBILE: Adding new argument letters to this index
         c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:s:q:",
                         long_options, &option_index);
 
@@ -387,7 +380,6 @@ bool ParseInputOptions (int argc, char **argv)
                 }
                 opt_delay *= 1000; // in microsec
             break;
-//LWVMOBILE: Adding new entries here to handle switches in CLI
 
             case 'x':
                 if (optarg[0] == '-')
@@ -419,7 +411,7 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 }
             break;
-//LWVMOBILE: End new entried
+
             case 'q':
                 if (optarg[0] == '-')
                 {
@@ -557,45 +549,45 @@ time_t GetTime(char *timestamp)
     switch (opt_date)
     {
 	    case 0:
-    		sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mon+1, ltime->tm_mday, ltime->tm_year%100,      //LWVMOBILE: Going to remove the +1 from the month to see what happens
-            		ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                              //LWVMOBILE: Removing +1 seems to set month back one month, why does that happen?
+    		sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mon+1, ltime->tm_mday, ltime->tm_year%100,
+            		ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
 		break;
 	    case 1:
-	    	sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,    //LWVMOBILE: Going to attempt to switch around mm and dd to see what happens
-        	        ltime->tm_hour, ltime->tm_min, ltime->tm_sec);                                                            //LWVMOBILE: Switches Print order to mm-dd-yy, may switch to yy-mm-dd
+	    	sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,
+        	        ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
 		break;
     }
     return etime;
 }
-// Calculate difference in time in [dd days][hh:][mm:][ss secs]
 
 //LWVMOBILE: It is very tempting to lop off part of this function, how many TX lasts more than a few seconds or minutes??
 //LWVMOBILE: Will still need to rework eventually, this will cause any time greater than 60 minutes to roll over back to 0 I believe
+//neural: Why bother? if there are transmissions lasting more than 1 hour or 1 day, the string should be consistent with the long duration.
+// Calculate difference in time in [dd days][hh:][mm:][ss secs]
 time_t DiffTime(char *timestamp, time_t start_time)
 {
     double seconds;
     time_t etime = time (NULL);
     seconds = difftime(etime , start_time);
 
-    time_t elapssed = (time_t)seconds; //aerrg //LWVMOBILE: ARRRRG!
-    struct tm *ltime = localtime(&elapssed); //LWVMOBILE: elapssed spelled wrong? or just a different variable?
-// LWVMOBILE: I decided to only remove days from equation.
+    // casting to time_t, someone with better idea may change this to be more consistent 
+    time_t elapsed = (time_t)seconds;
+    struct tm *ltime = localtime(&elapsed);
     timestamp[0] = '\0';
 
 
-/*  if (ltime->tm_mday > 1) //LWVMOBILE: Comment out here if break/regression happens
-      {
+    if (ltime->tm_mday > 1)
+    {
           char days[10];
-          sprintf(days, "%2d days ", ltime->tm_mday); //LWVMOBILE: Hmmmm....wonder why mday is mday-1 here?? Maybe that causes it to roll backwards to 30 days?? or maybe it doesn't work right?
-          strcat(timestamp, days);                    //LWVMOBILE: Changing -1 displays 31 days, I wonder if the +1 month up above makes this display wrong but is needed for correct date??
-      }                                               //LWVMOBILE: I just discovered elapsed time also displays 24 minutes as well for some reason.
-      if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
-      {
+          sprintf(days, "%2d days ", ltime->tm_mday); 
+          strcat(timestamp, days);                   
+    }                                             
+    if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
+    {
           char hours[10];
           sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
           strcat(timestamp, hours);
-      } */ // LWVMOBILE: Comment out to here if regression happens
-
+    }
 
     if (ltime->tm_min > 0)
     {
@@ -603,18 +595,64 @@ time_t DiffTime(char *timestamp, time_t start_time)
         sprintf(min, "%2.2d:", ltime->tm_min);
         strcat(timestamp, min);
     }
-    if (ltime->tm_sec > 0)
-    {
         char sec[16];
         sprintf(sec, "%2.2d sec", ltime->tm_sec);
         strcat(timestamp, sec);
-    }
-    return elapssed;
+    return elapsed;
 }
 
-// LWVMOBILE: I removed all calculations for months, days, and hours. Something in the days or hours calculation makes it roll backwards to 30 days, perhaps the GMT time offset may need time zone feature.
-// LWVMOBILE: Seconds seems to be 'calculated' by only looking at the difference initial seconds reading and ending, in other words it rolls 0 to 60 and then to 0 again, doesn't accumulate upwards.
-// LWVMOBILE: Going to leave this as just minutes and secods, I would do seconds only, but time is calculated using simple subtraction from each field as opposed to counting upwards in seconds.
+//
+// CheckUserInput
+// 
+// Clear the bans if 'c' is pressed during the scan cycles
+//
+void CheckUserInput (void)
+{
+    int     hit = 0;
+    char    c;
+    bool    pause = false;
+    long    sleep = 100000; // 100 ms
+#ifndef OSX
+    __fpurge(stdin);
+#else
+    fpurge(stdin);
+#endif
+    nonblock(NB_ENABLE);
+    do
+    {    
+        hit = kbhit();
+        if (hit !=  0)
+        {
+            c = fgetc(stdin);
+            switch (c)
+            {
+                case 'c':
+                {
+                    // Clear all bans
+                    ClearAllBans();
+                    continue;
+                }   
+                case 'p':
+                {
+                    // pause until another 'p'
+                    pause ^= true; // switch pause mode
+                    break;
+                }                 
+                default:
+                    break;
+            }             
+        }
+        if (pause)
+        {
+            usleep (sleep);
+            continue;
+        }                       
+
+    } while ( hit != 0 || pause );
+
+    nonblock(NB_DISABLE);
+    return;
+}
 
 
 //
@@ -869,6 +907,8 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     char timestamp[BUFSIZE] = {0};
     while (true)
     {
+        CheckUserInput();
+        
         for (int i = 0; i < Frequencies_Max; i++)
         {
             if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
@@ -886,7 +926,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     //usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
                     usleep((skip)?slow_scan_cycle:opt_speed);                   //LWVMOBILE: Using new variable set by default and also by user switch. Seems to work. GJ ME.
                     // LWVMOBILE: Scan stoppage due to no delay argument given has been fixed, was a variable set way too high.
-                    GetSignalLevelEx(sockfd, &level, 3 );
+                    GetSignalLevelEx(sockfd, &level, 5 );
                     if (level >= squelch)
                     {
                         time_t hit_time = GetTime(timestamp);
@@ -900,8 +940,6 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         printf (" [elapsed time %s]\n", timestamp);
                         GetSquelchLevel(sockfd, &squelch);
                         SetSquelchLevel(sockfd, squelch + squelch_delta);
-
-
                         fflush(stdout);
                     }
                     else
@@ -1031,7 +1069,7 @@ bool Debounce (int sockfd, freq_t current_freq, double level)
     double current_level = level;
     double squelch;
     usleep(300000); // 300 ms wait, hope it's good enough
-    GetSignalLevelEx( sockfd, &current_level, 3 );
+    GetSignalLevelEx( sockfd, &current_level, 5 );
     GetSquelchLevel ( sockfd, &squelch );
 
     if (current_level < squelch )
@@ -1039,6 +1077,36 @@ bool Debounce (int sockfd, freq_t current_freq, double level)
     else
         return true;
 
+}
+
+//
+// BacktrackFrequency
+// got a signal but lost it
+// move back to find it again more slowly
+//
+freq_t BacktrackFrequency(int sockfd, freq_t current_freq, freq_t freq_interval, int numberOfIntervals, freq_t freq_min, freq_t freq_max)
+{
+    double squelch = 0;
+    double level = 0;
+    int i;
+
+    for (i=0 ; i < numberOfIntervals ; i++)
+    {
+        current_freq -= freq_interval;
+        if (current_freq < freq_min)
+            current_freq = freq_max - freq_interval ;
+        GetSquelchLevel(sockfd, &squelch); 
+        SetFreq(sockfd, current_freq);
+        usleep(150000);  
+        // tries to average out spikes, 5 sample
+        GetSignalLevelEx( sockfd, &level, 5);
+        if (level >= squelch)
+        {
+            //found it again
+            break;
+        }
+    }
+    return current_freq;
 }
 
 //
@@ -1065,8 +1133,8 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
     {
         SetFreq(sockfd, current_freq);
         usleep(150000);
-        // tries to average out spikes, 3 sample
-        GetSignalLevelEx( sockfd, &level, 3);
+        // tries to average out spikes, 5 sample
+        GetSignalLevelEx( sockfd, &level, 5);
         levels[l].level = level;
         levels[l].freq  = current_freq;
         //printf ("Freq:%ld Level:%.2f\t", current_freq, level);
@@ -1123,7 +1191,7 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
     // Dived in two half, follow one until the level decreases if so follow the second half
     // (hopefully this reduces the num of steps), tries to average out spikes, 3 sample
     double reference_level;
-    GetSignalLevelEx( sockfd, &reference_level, 3);
+    GetSignalLevelEx( sockfd, &reference_level, 5);
     freq_t   reference_freq  = current_freq;
     freq_min   = current_freq - 5000;
     freq_max   = current_freq + 5000;
@@ -1136,8 +1204,8 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
     {
         SetFreq(sockfd, current_freq);
         usleep(150000);
-        // tries to average out spikes, 3 sample
-        GetSignalLevelEx( sockfd, &level, 3);
+        // tries to average out spikes, 5 sample
+        GetSignalLevelEx( sockfd, &level, 5);
 
         if (level < reference_level)
         {
@@ -1155,8 +1223,8 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
     {
         SetFreq(sockfd, current_freq);
         usleep(150000);
-        // tries to average out spikes, 3 sample
-        GetSignalLevelEx( sockfd, &level, 3);
+        // tries to average out spikes, 5 sample
+        GetSignalLevelEx( sockfd, &level, 5);
 
         if (level < reference_level)
         {
@@ -1230,6 +1298,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 
     while (true)
     {
+        CheckUserInput();         
         IsBannedFreq(&current_freq); // test and change current_frequency to next available slot;
         SetFreq(sockfd, current_freq);
         if (saved_cycle)
@@ -1238,10 +1307,16 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             usleep((skip)?sleep_cycle_active:sleep_cyle);
 
         GetSquelchLevel(sockfd, &squelch);
-        GetSignalLevelEx(sockfd, &level, 3 );
+        GetSignalLevelEx(sockfd, &level, 5 );
+
+        if (opt_verbose)
+        {
+            printf("Freq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
+            fflush (stdout);
+        }
+
         if (level >= squelch)
         {
-            SetSquelchLevel(sockfd, squelch - squelch_delta);
             // we have a possible match, but sometimes level oscillates after a squelch miss
             bool still_good = Debounce(sockfd, current_freq, level);
             if (!still_good)
@@ -1249,9 +1324,9 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 // Signal lost
                 // it could be a ghosts signal because we are running too fast, slow down a bit
                 success_counter = 0; // stop incrementing sleep cycle for a while
-                sleep_cyle+= 1000;   // add penality
-                if (sleep_cyle > 30000)
-                    sleep_cyle = 30000;
+                sleep_cyle+= 5000;   // add penality
+                if (sleep_cyle > 50000)
+                    sleep_cyle = 50000;
                 if (opt_verbose)
                 {
                     printf("Missing signal. Slowing down: %ld ms wait time.\n", sleep_cyle/1000);
@@ -1260,9 +1335,11 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 // tries to recover to get back the signal, check our steps...
                 if (!saved_cycle)
                 {
-                    current_freq-=(freq_interval * 3);
-                    if (current_freq < freq_min)
-                        current_freq = freq_max - (freq_interval * 3);
+                    current_freq = BacktrackFrequency(sockfd, current_freq, freq_interval, 4, freq_min, freq_max);
+                    if (IsBannedFreq(&current_freq))
+                    {
+                        skip = true;
+                    }
                 }
                 continue;
             }
@@ -1294,6 +1371,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             else
             {
                 SaveFreq(current_freq);
+                SetSquelchLevel(sockfd, squelch - squelch_delta);
                 time_t hit_time = GetTime(timestamp);
                 printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
                         timestamp, print_freq(current_freq),
@@ -1304,10 +1382,14 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 time_t elapsed = DiffTime(timestamp, hit_time);
                 printf (" [elapsed time %s]\n", timestamp);
                 fflush(stdout);
+                GetSquelchLevel(sockfd, &squelch);
+                SetSquelchLevel(sockfd, squelch + squelch_delta);                
             }
-
-            GetSquelchLevel(sockfd, &squelch);
-            SetSquelchLevel(sockfd, squelch + squelch_delta);
+            if (skip)
+            {
+                sweep_count = 0; // reactivate sweep scan
+                continue; // go to the next freq set in current_freq
+            }
         }
         else
         {
@@ -1366,14 +1448,11 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 }
 
 
-
-
 int main(int argc, char **argv) {
     int sockfd, portno, n;
     char *hostname;
     char buf[BUFSIZE];
     FILE *bookmarksfd;
-
 
     opt_hostname = (char *) g_hostname;
     opt_port     = g_portno;
