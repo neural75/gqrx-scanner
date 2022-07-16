@@ -58,8 +58,6 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 -y  --date                   Date Format, default is 0.
                                0 = mm-dd-yy
                                1 = dd-mm-yy
-                               2 = yy-mm-dd
-                               This feature has not been implemented yet.
 
 -q, --squelch_delta <dB>     If set creates bottom squelch just
                              for listening. It may reduce unnecessary squelch audio supress.

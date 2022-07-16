@@ -167,17 +167,14 @@ void print_usage ( char *name )
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
-//LWVMOBILE: Adding some descriptions for new switches here
     printf ("-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.\n");
     printf ("                               If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed\n");
     printf ("-y  --date                   Date Format, default is 0.\n");
     printf ("                               0 = mm-dd-yy\n");
     printf ("                               1 = dd-mm-yy\n");
-    printf ("                               2 = yy-mm-dd\n");
     printf ("-q, --squelch_delta <dB>     If set creates bottom squelch just\n");
     printf ("                             for listening. It may reduce unnecessary squelch audio supress.\n");
     printf ("                             Default: 0.0\n");
-//LWVMOBILE: End of new switches here
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
