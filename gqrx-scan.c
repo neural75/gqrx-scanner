@@ -984,15 +984,18 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         if (opt_squelch_delta_auto_enable){
                             squelch_backup = squelch;
                             SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
+                            printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f,\nNoise Floor: %f, Squelch set: %f ",
+                                    timestamp, print_freq(current_freq),
+                                    Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor, Frequencies[i].noise_floor + squelch_delta);
                         }
                         else
                         {
                             squelch_backup = squelch;
                             SetSquelchLevel(sockfd, squelch - squelch_delta);
+                            printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f,\nNoise Floor: %f, Squelch set: %f ",
+                                    timestamp, print_freq(current_freq),
+                                    Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor, squelch - squelch_delta);
                         }
-                        printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
-                                timestamp, print_freq(current_freq),
-                                Frequencies[i].descr, level, squelch);
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
