@@ -73,6 +73,7 @@ SOFTWARE.
 //
 typedef struct {
     freq_t freq; // frequency in Mhz
+    double noise_floor; // averages noise floor of frequency
     int count; // hit count on sweep scan
     int miss;  // miss count on sweep scan
     char descr[BUFSIZE]; // ugly buffer for descriptions: TODO convert it in a pointer
@@ -87,7 +88,10 @@ typedef enum
 } SCAN_MODE;
 
 // Stores
-FREQ Frequencies[FREQ_MAX] = {0};
+/*FREQ Frequencies[FREQ_MAX] = {0};*/
+FREQ* Frequencies; //if user would exceed 4096 different frequencies counter it would be bad
+                   //I've took liberty of changing it to dynamic array
+                   //implementation in main after ParseInputOptions()
 int  Frequencies_Max = 0;
 
 FREQ SavedFrequencies[SAVED_FREQ_MAX] = {0};
@@ -136,7 +140,7 @@ bool            opt_verbose = false;
 
 // set squelch delta
 double          opt_squelch_delta = 0.0;
-
+bool            opt_squelch_delta_auto_enable = false;
 //
 // Local Prototypes
 //
@@ -172,9 +176,14 @@ void print_usage ( char *name )
     printf ("-y  --date                   Date Format, default is 0.\n");
     printf ("                               0 = mm-dd-yy\n");
     printf ("                               1 = dd-mm-yy\n");
-    printf ("-q, --squelch_delta <dB>     If set creates bottom squelch just\n");
-    printf ("                             for listening. It may reduce unnecessary squelch audio supress.\n");
+    printf ("-q, --squelch_delta <dB>|a<dB> If set creates bottom squelch just for listening.\n");
+    printf ("                             It may reduce unnecessary squelch audio supress.\n");
     printf ("                             Default: 0.0\n");
+    printf ("                             Ex.: 6.5\n");
+    printf ("                             Place \"a\" switch before <dB> value to turn into auto mode\n");
+    printf ("                             It will determine squelch delta based on noise floor and\n");
+    printf ("                             <dB> value will determine how far squelch delta will be placed from it.\n");
+    printf ("                             Ex.: a0.5\n");
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
@@ -195,6 +204,7 @@ void print_usage ( char *name )
 
     exit (EXIT_FAILURE);
 }
+
 
 bool ParseTags (char *tags)
 {
@@ -246,7 +256,7 @@ bool ParseInputOptions (int argc, char **argv)
           {"delay",   required_argument, 0, 'd'},
           {"speed",   required_argument, 0, 'x'},
           {"date",    required_argument, 0, 'y'},
-          {"squelch_delta",    required_argument, 0, 's'},
+          {"squelch_delta",    required_argument, 0, 'q'},
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
@@ -418,12 +428,24 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-
-                if ((opt_squelch_delta = atof(optarg)) == 0)
+                if (optarg[0] == 'a')
                 {
-                    printf ("Error: -%c: Invalid squelch level\n", c);
-                    print_usage(argv[0]);
+                    if ((opt_squelch_delta = atof(optarg+1)) == 0)
+                    {
+                        printf ("Error: -%c: Invalid squelch level\n", c);
+                        print_usage(argv[0]);
+                    }
+                    opt_squelch_delta_auto_enable = true;
                 }
+                else
+                {
+                    if ((opt_squelch_delta = atof(optarg)) == 0)
+                    {
+                        printf ("Error: -%c: Invalid squelch level\n", c);
+                        print_usage(argv[0]);
+                    }
+                }
+                printf("Squelch delta set: %f\n", opt_squelch_delta);
             break;
 
             case 't':
@@ -570,7 +592,7 @@ time_t DiffTime(char *timestamp, time_t start_time)
     time_t etime = time (NULL);
     seconds = difftime(etime , start_time);
 
-    // casting to time_t, someone with better idea may change this to be more consistent 
+    // casting to time_t, someone with better idea may change this to be more consistent
     time_t elapsed = (time_t)seconds;
     struct tm *ltime = localtime(&elapsed);
     timestamp[0] = '\0';
@@ -579,9 +601,9 @@ time_t DiffTime(char *timestamp, time_t start_time)
     if (ltime->tm_mday > 1)
     {
           char days[10];
-          sprintf(days, "%2d days ", ltime->tm_mday); 
-          strcat(timestamp, days);                   
-    }                                             
+          sprintf(days, "%2d days ", ltime->tm_mday);
+          strcat(timestamp, days);
+    }
     if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
     {
           char hours[10];
@@ -603,7 +625,7 @@ time_t DiffTime(char *timestamp, time_t start_time)
 
 //
 // CheckUserInput
-// 
+//
 // Clear the bans if 'c' is pressed during the scan cycles
 //
 void CheckUserInput (void)
@@ -619,7 +641,7 @@ void CheckUserInput (void)
 #endif
     nonblock(NB_ENABLE);
     do
-    {    
+    {
         hit = kbhit();
         if (hit !=  0)
         {
@@ -631,22 +653,22 @@ void CheckUserInput (void)
                     // Clear all bans
                     ClearAllBans();
                     continue;
-                }   
+                }
                 case 'p':
                 {
                     // pause until another 'p'
                     pause ^= true; // switch pause mode
                     break;
-                }                 
+                }
                 default:
                     break;
-            }             
+            }
         }
         if (pause)
         {
             usleep (sleep);
             continue;
-        }                       
+        }
 
     } while ( hit != 0 || pause );
 
@@ -759,8 +781,8 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     // restart scanning
     *current_freq+=g_ban_tollerance;
     // round up to next near tenth of khz  145892125 -> 145900000
-    *current_freq = ceil( *current_freq / (double)opt_scan_bw ) * opt_scan_bw; 
-    
+    *current_freq = ceil( *current_freq / (double)opt_scan_bw ) * opt_scan_bw;
+
 #ifndef OSX
     __fpurge(stdin);
 #else
@@ -889,11 +911,13 @@ freq_t FilterFrequency (int idx)
 
 bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta)
 {
+
     freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
     double level = 0;
     GetSignalLevel(sockfd, &level );
     double squelch = 0;
+    double squelch_backup = 0;
     GetSquelchLevel(sockfd, &squelch);
 
     freq_t current_freq = freq_min;
@@ -908,9 +932,11 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     while (true)
     {
         CheckUserInput();
-        
+
         for (int i = 0; i < Frequencies_Max; i++)
         {
+            if (Frequencies[i].noise_floor == 0)
+                Frequencies[i].noise_floor = level;
             if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
                 continue;
             if (IsBannedFreq(&current_freq))
@@ -930,7 +956,15 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     if (level >= squelch)
                     {
                         time_t hit_time = GetTime(timestamp);
-                        SetSquelchLevel(sockfd, squelch - squelch_delta);
+                        if (opt_squelch_delta_auto_enable){
+                            squelch_backup = squelch;
+                            SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
+                        }
+                        else
+                        {
+                            squelch_backup = squelch;
+                            SetSquelchLevel(sockfd, squelch - squelch_delta);
+                        }
                         printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
                                 timestamp, print_freq(current_freq),
                                 Frequencies[i].descr, level, squelch);
@@ -938,13 +972,14 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
                         printf (" [elapsed time %s]\n", timestamp);
-                        GetSquelchLevel(sockfd, &squelch);
-                        SetSquelchLevel(sockfd, squelch + squelch_delta);
+                        SetSquelchLevel(sockfd, squelch_backup);
                         fflush(stdout);
                     }
                     else
+                    {
+                        Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
                         skip = false;
-
+                    }
                 }
         }
 
@@ -1095,9 +1130,9 @@ freq_t BacktrackFrequency(int sockfd, freq_t current_freq, freq_t freq_interval,
         current_freq -= freq_interval;
         if (current_freq < freq_min)
             current_freq = freq_max - freq_interval ;
-        GetSquelchLevel(sockfd, &squelch); 
+        GetSquelchLevel(sockfd, &squelch);
         SetFreq(sockfd, current_freq);
-        usleep(150000);  
+        usleep(150000);
         // tries to average out spikes, 5 sample
         GetSignalLevelEx( sockfd, &level, 5);
         if (level >= squelch)
@@ -1273,7 +1308,10 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
     double level = 0;
     GetSignalLevel(sockfd, &level );
     double squelch = 0;
+    double squelch_backup = 0;
     GetSquelchLevel(sockfd, &squelch);
+
+    size_t freqeuencies_count = ((opt_max_freq-opt_min_freq)/opt_scan_bw); //for loop boundary
 
     freq_t current_freq = freq_min;
 
@@ -1298,153 +1336,165 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 
     while (true)
     {
-        CheckUserInput();         
-        IsBannedFreq(&current_freq); // test and change current_frequency to next available slot;
-        SetFreq(sockfd, current_freq);
-        if (saved_cycle)
-            usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
-        else
-            usleep((skip)?sleep_cycle_active:sleep_cyle);
-
-        GetSquelchLevel(sockfd, &squelch);
-        GetSignalLevelEx(sockfd, &level, 5 );
-
-        if (opt_verbose)
+        for ( size_t i = 0 ; i <= freqeuencies_count; i++)
         {
-            printf("Freq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
-            fflush (stdout);
-        }
+            CheckUserInput();
 
-        if (level >= squelch)
-        {
-            // we have a possible match, but sometimes level oscillates after a squelch miss
-            bool still_good = Debounce(sockfd, current_freq, level);
-            if (!still_good)
-            {
-                // Signal lost
-                // it could be a ghosts signal because we are running too fast, slow down a bit
-                success_counter = 0; // stop incrementing sleep cycle for a while
-                sleep_cyle+= 5000;   // add penality
-                if (sleep_cyle > 50000)
-                    sleep_cyle = 50000;
-                if (opt_verbose)
-                {
-                    printf("Missing signal. Slowing down: %ld ms wait time.\n", sleep_cyle/1000);
-                    fflush (stdout);
-                }
-                // tries to recover to get back the signal, check our steps...
-                if (!saved_cycle)
-                {
-                    current_freq = BacktrackFrequency(sockfd, current_freq, freq_interval, 4, freq_min, freq_max);
-                    if (IsBannedFreq(&current_freq))
-                    {
-                        skip = true;
-                    }
-                }
-                continue;
-            }
+            IsBannedFreq(&current_freq); // test and change current_frequency to next available slot;
+            SetFreq(sockfd, current_freq);
+            if (saved_cycle)
+                usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
             else
+                usleep((skip)?sleep_cycle_active:sleep_cyle);
+
+            GetSquelchLevel(sockfd, &squelch);
+            GetSignalLevelEx(sockfd, &level, 5 );
+
+            if (opt_verbose)
             {
-                // Frequency acquired successfully
-                // Or.. we could have jumped on another frequency with a valid signal nearby.
-                success_counter++;
-                if (success_counter > success_factor)
+                printf("Freq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
+                fflush (stdout);
+            }
+
+            if (level >= squelch)
+            {
+                // we have a possible match, but sometimes level oscillates after a squelch miss
+                bool still_good = Debounce(sockfd, current_freq, level);
+                if (!still_good)
                 {
-                    // Increase speed a little bit in order to compensates signal lost because of bad luck
-                    // while we moved the frequency (signal disappearing)
-                    sleep_cyle-= 1000; // add a reward
-                    if (sleep_cyle < 10000)
-                        sleep_cyle = 10000;
+                    // Signal lost
+                    // it could be a ghosts signal because we are running too fast, slow down a bit
+                    success_counter = 0; // stop incrementing sleep cycle for a while
+                    sleep_cyle+= 5000;   // add penality
+                    if (sleep_cyle > 50000)
+                        sleep_cyle = 50000;
                     if (opt_verbose)
                     {
-                        printf("Signals acquired successfully. Speeding up: %ld ms wait time.\n", sleep_cyle/1000);
+                        printf("Missing signal. Slowing down: %ld ms wait time.\n", sleep_cyle/1000);
                         fflush (stdout);
                     }
-                    success_counter = 0; // stop decrementing sleep cycle for a while
+                    // tries to recover to get back the signal, check our steps...
+                    if (!saved_cycle)
+                    {
+                        current_freq = BacktrackFrequency(sockfd, current_freq, freq_interval, 4, freq_min, freq_max);
+                        if (IsBannedFreq(&current_freq))
+                        {
+                            skip = true;
+                        }
+                    }
+                    continue;
                 }
-            }
-            current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
-            if (IsBannedFreq(&current_freq))
-            {
-                skip = true;
+                else
+                {
+                    // Frequency acquired successfully
+                    // Or.. we could have jumped on another frequency with a valid signal nearby.
+                    success_counter++;
+                    if (success_counter > success_factor)
+                    {
+                        // Increase speed a little bit in order to compensates signal lost because of bad luck
+                        // while we moved the frequency (signal disappearing)
+                        sleep_cyle-= 1000; // add a reward
+                        if (sleep_cyle < 10000)
+                            sleep_cyle = 10000;
+                        if (opt_verbose)
+                        {
+                            printf("Signals acquired successfully. Speeding up: %ld ms wait time.\n", sleep_cyle/1000);
+                            fflush (stdout);
+                        }
+                        success_counter = 0; // stop decrementing sleep cycle for a while
+                    }
+                }
+                current_freq = AdjustFrequency(sockfd, current_freq, freq_interval/2);
+                if (IsBannedFreq(&current_freq))
+                {
+                    skip = true;
+                }
+                else
+                {
+                    SaveFreq(current_freq);
+                    if (opt_squelch_delta_auto_enable){
+                        squelch_backup = squelch;
+                        SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
+                    }
+                    else
+                    {
+                        squelch_backup = squelch;
+                        SetSquelchLevel(sockfd, squelch - squelch_delta);
+                    }
+                    time_t hit_time = GetTime(timestamp);
+                    printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
+                            timestamp, print_freq(current_freq),
+                            level, squelch);
+                    fflush(stdout);
+                    // Wait user input or delay time after signal lost
+                    skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
+                    time_t elapsed = DiffTime(timestamp, hit_time);
+                    printf (" [elapsed time %s]\n", timestamp);
+                    fflush(stdout);
+                    SetSquelchLevel(sockfd, squelch_backup);
+                }
+                if (skip)
+                {
+                    sweep_count = 0; // reactivate sweep scan
+                    continue; // go to the next freq set in current_freq
+                }
             }
             else
             {
-                SaveFreq(current_freq);
-                SetSquelchLevel(sockfd, squelch - squelch_delta);
-                time_t hit_time = GetTime(timestamp);
-                printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
-                        timestamp, print_freq(current_freq),
-                        level, squelch);
-                fflush(stdout);
-                // Wait user input or delay time after signal lost
-                skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
-                time_t elapsed = DiffTime(timestamp, hit_time);
-                printf (" [elapsed time %s]\n", timestamp);
-                fflush(stdout);
-                GetSquelchLevel(sockfd, &squelch);
-                SetSquelchLevel(sockfd, squelch + squelch_delta);                
-            }
-            if (skip)
-            {
-                sweep_count = 0; // reactivate sweep scan
-                continue; // go to the next freq set in current_freq
-            }
-        }
-        else
-        {
-            skip = false;
-            // no activities
-            if (saved_cycle)
-            {
-                // miss count on already seen frequency
-                if (++SavedFrequencies[current_saved_idx].miss > max_miss_threshold)
+                skip = false;
+                Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
+                // no activities
+                if (saved_cycle)
                 {
-                    SavedFrequencies[current_saved_idx].count--;
-                    SavedFrequencies[current_saved_idx].miss = 0;
+                    // miss count on already seen frequency
+                    if (++SavedFrequencies[current_saved_idx].miss > max_miss_threshold)
+                    {
+                        SavedFrequencies[current_saved_idx].count--;
+                        SavedFrequencies[current_saved_idx].miss = 0;
+                    }
                 }
             }
-        }
 
-        // Loop saved freq after a while
-        if (sweep_count > 40)
-        {
-            if (!saved_cycle)
+            // Loop saved freq after a while
+            if (sweep_count > 40)
             {
-                // start cycling on saved frequencies
-                last_freq = current_freq;
-                saved_cycle = true;
-            }
-            // search candidates into saved frequencies
-            while ( (SavedFrequencies[saved_idx].count < min_hit_threshold) && //hit threshold
-                    (saved_idx < SavedFreq_Max) )
-            {
-                saved_idx++;
-            }
-            if (saved_idx >= SavedFreq_Max)
-            {
-                saved_idx = 0;
-                sweep_count = 0; // reactivates sweep scan
-                saved_cycle = false;
-                current_freq = last_freq;
-                current_freq = ceil( current_freq / (double)opt_scan_bw ) * opt_scan_bw;
-            }
-            else // found one
-            {
-                current_freq = SavedFrequencies[saved_idx].freq;
-                current_saved_idx = saved_idx;
-                saved_idx++;
+                if (!saved_cycle)
+                {
+                    // start cycling on saved frequencies
+                    last_freq = current_freq;
+                    saved_cycle = true;
+                }
+                // search candidates into saved frequencies
+                while ( (SavedFrequencies[saved_idx].count < min_hit_threshold) && //hit threshold
+                        (saved_idx < SavedFreq_Max) )
+                {
+                    saved_idx++;
+                }
                 if (saved_idx >= SavedFreq_Max)
+                {
                     saved_idx = 0;
-                continue;
+                    sweep_count = 0; // reactivates sweep scan
+                    saved_cycle = false;
+                    current_freq = last_freq;
+                    current_freq = ceil( current_freq / (double)opt_scan_bw ) * opt_scan_bw;
+                }
+                else // found one
+                {
+                    current_freq = SavedFrequencies[saved_idx].freq;
+                    current_saved_idx = saved_idx;
+                    saved_idx++;
+                    if (saved_idx >= SavedFreq_Max)
+                        saved_idx = 0;
+                    continue;
+                }
             }
+            current_freq+=freq_interval;
+            if (current_freq > freq_max)
+                current_freq = freq_min;
+            sweep_count++;
+            i++;
         }
-        current_freq+=freq_interval;
-        if (current_freq > freq_max)
-            current_freq = freq_min;
-        sweep_count++;
     }
-
 }
 
 
@@ -1458,6 +1508,15 @@ int main(int argc, char **argv) {
     opt_port     = g_portno;
     opt_delay    = g_delay;
     ParseInputOptions(argc, argv);
+
+    if (opt_scan_mode == sweep)
+    {
+        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
+        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
+    }
+    else {
+        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    }
 
     // post validating
     if (opt_tag_search && (opt_scan_mode == sweep) )
@@ -1553,5 +1612,6 @@ int main(int argc, char **argv) {
 
     fclose (bookmarksfd);
     close(sockfd);
+    free(Frequencies);
     return 0;
 }
