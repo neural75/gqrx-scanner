@@ -59,10 +59,13 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 -y  --date                   Date Format, default is 0.
                                0 = mm-dd-yy
                                1 = dd-mm-yy
-
 -q, --squelch_delta <dB>     If set creates bottom squelch just
                              for listening. It may reduce unnecessary squelch audio supress.
                              Default: 0.0
+                             Place \"a\" switch before <dB> value to turn into auto mode.
+                             It will determine squelch delta based on noise floor and
+                             <dB> value will determine how far squelch delta will be placed from it.
+                             Ex.: a0.5
 -t, --tags <"tags">          Filter signals. Match only on frequencies marked with a tag found in "tags"
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
                                tags are case insensitive and match also for partial string contained in a tag
