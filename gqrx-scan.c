@@ -272,7 +272,7 @@ bool ParseInputOptions (int argc, char **argv)
 
         /* Detect the end of the options. */
         if (c == -1)
-        break;
+            break;
 
         switch (c)
         {
@@ -938,7 +938,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
             if (Frequencies[i].noise_floor == 0)
                 Frequencies[i].noise_floor = level;
 
-            printf("\rCurrent noise floor: %f", Frequencies[i].noise_floor);
+            printf("\rCurrent noise floor: %f  ", Frequencies[i].noise_floor);
             fflush(stdout);
 
             if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
