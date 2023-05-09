@@ -53,6 +53,7 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 -b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f
 -e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
 -d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000
+-l, --max-listen <time>      Maximum time to listen to a frequency, active or otherwise. Default 0, no maximum time
 -x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.
                                If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed
 -y  --date                   Date Format, default is 0.
