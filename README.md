@@ -1,3 +1,4 @@
+![gqrx-scanner](media/gqrx-scanner-repository.png)
 # gqrx-scanner
 A frequency scanner for [Gqrx Software Defined Radio](http://gqrx.dk/) receiver
 
