@@ -963,7 +963,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
             if (Frequencies[i].noise_floor == 0)
                 Frequencies[i].noise_floor = level;
 
-            printf("\rNoise floor: %f  ", Frequencies[i].noise_floor);
+            printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
             fflush(stdout);
 
             if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
