@@ -1529,7 +1529,6 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             if (current_freq > freq_max)
                 current_freq = freq_min;
             sweep_count++;
-            i++;
         }
     }
 }
