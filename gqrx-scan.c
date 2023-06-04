@@ -135,6 +135,7 @@ bool            opt_tag_search = false;
 char           *opt_tags[TAG_MAX] = {0};
 int             opt_tag_max = 0;
 bool            opt_disable_store = false;
+long            opt_max_listen = 0;
 // only for debug
 bool            opt_verbose = false;
 
@@ -158,6 +159,7 @@ void print_usage ( char *name )
     printf ("%s\t[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]\n", name);
     printf ("\t\t[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]\n");
     printf ("\t\t[-d|--delay <lingering time in milliseconds>]\n");
+    printf ("\t\t[-l|--max-listen <maximum listening time in milliseconds>]\n");
     printf ("\t\t[-t|--tags <\"tag1|tag2|...\">]\n");
     printf ("\t\t[-v|--verbose]\n");
     printf ("\n");
@@ -171,6 +173,7 @@ void print_usage ( char *name )
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
+    printf ("-l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0, no maximum\n");
     printf ("-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.\n");
     printf ("                               If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed\n");
     printf ("-y  --date                   Date Format, default is 0.\n");
@@ -257,12 +260,13 @@ bool ParseInputOptions (int argc, char **argv)
           {"speed",   required_argument, 0, 'x'},
           {"date",    required_argument, 0, 'y'},
           {"squelch_delta",    required_argument, 0, 'q'},
+          {"max-listen",       required_argument, 0, 'l'},
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:s:q:",
+        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:s:q:l:",
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -389,6 +393,21 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 }
                 opt_delay *= 1000; // in microsec
+            break;
+
+            case 'l':
+                if (optarg[0] == '-')
+                {
+                    printf ("Error: -%c: option requires an argument\n", c);
+                    print_usage(argv[0]);
+                }
+
+                if ((opt_max_listen = atol(optarg)) == 0)
+                {
+                    printf ("Error: -%c: Invalid time\n", c);
+                    print_usage(argv[0]);
+                }
+                opt_max_listen *= 1000; // in microsec
             break;
 
             case 'x':
@@ -686,7 +705,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 {
     double    squelch;
     double  level;
-    long    sleep_time = 0, sleep = 100000; // 100 ms
+    long    sleep_time = 0, listen_time = 0, sleep = 100000; // 100 ms
     int     exit = 0;
     char    c;
     bool    skip = false;
@@ -751,6 +770,12 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         {
             usleep (sleep);
             continue;
+        }
+
+        listen_time += sleep;
+        if (opt_max_listen != 0 && opt_max_listen <= listen_time) {
+            exit = 1;
+            skip = true;
         }
 
         // exit = 0
