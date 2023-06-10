@@ -963,7 +963,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
             if (Frequencies[i].noise_floor == 0)
                 Frequencies[i].noise_floor = level;
 
-            printf("\rCurrent noise floor: %f  ", Frequencies[i].noise_floor);
+            printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
             fflush(stdout);
 
             if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
@@ -1368,7 +1368,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 
     while (true)
     {
-        for ( size_t i = 0 ; i <= freqeuencies_count; i++)
+        for ( size_t i = 0 ; i < freqeuencies_count; i++)
         {
             CheckUserInput();
 
@@ -1385,7 +1385,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             if (Frequencies[i].noise_floor == 0)
                 Frequencies[i].noise_floor = level;
 
-            printf("\rCurrent noise floor: %f  ", Frequencies[i].noise_floor);
+            printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
             fflush(stdout);
             if (opt_verbose)
             {
@@ -1529,7 +1529,6 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             if (current_freq > freq_max)
                 current_freq = freq_min;
             sweep_count++;
-            i++;
         }
     }
 }
@@ -1546,15 +1545,6 @@ int main(int argc, char **argv) {
     opt_delay    = g_delay;
     ParseInputOptions(argc, argv);
 
-    if (opt_scan_mode == sweep)
-    {
-        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
-        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
-    }
-    else {
-        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
-    }
-
     // post validating
     if (opt_tag_search && (opt_scan_mode == sweep) )
     {
@@ -1569,6 +1559,7 @@ int main(int argc, char **argv) {
     if (
         (opt_min_freq > opt_max_freq)                        || // bad range or only min specified
         (opt_min_freq == 0 && opt_max_freq > 0)              || // or  only max specified
+        (opt_min_freq == 0 && opt_max_freq == 0)             || // or  none specified
         ((opt_min_freq != 0 && opt_max_freq != 0) &&            // or they are equal but different from 0
          (opt_min_freq == opt_max_freq)                  )
        ) // or only max specified
@@ -1579,6 +1570,16 @@ int main(int argc, char **argv) {
         printf ("       Please specify '-f <freq>' or '-b <begin_freq> -e <end_freq>.\n");
         print_usage(argv[0]);
     }
+
+    if (opt_scan_mode == sweep)
+    {
+        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
+        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
+    }
+    else {
+        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    }
+
 
     // here min & max could be equal to 0 because the user specified -f flag
     sockfd = Connect(opt_hostname, opt_port);
