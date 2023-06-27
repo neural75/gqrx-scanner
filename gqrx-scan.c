@@ -988,7 +988,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         if (opt_squelch_delta_auto_enable){
                             squelch_backup = squelch;
                             SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
-                            printf ("[%s] Freq: %s active [%s],\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
+                            printf ("\n[%s] Freq: %s active [%s],\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
                                     timestamp, print_freq(current_freq),
                                     Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor + squelch_delta);
                         }
@@ -996,7 +996,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         {
                             squelch_backup = squelch;
                             SetSquelchLevel(sockfd, squelch - squelch_delta);
-                            printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f,\nNoise Floor: %f, Squelch set: %2.2f ",
+                            printf ("\n[%s] Freq: %s active [%s], Level: %2.2f/%2.2f,\nNoise Floor: %f, Squelch set: %2.2f ",
                                     timestamp, print_freq(current_freq),
                                     Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor, squelch - squelch_delta);
                         }
@@ -1389,7 +1389,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             fflush(stdout);
             if (opt_verbose)
             {
-                printf("Freq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
+                printf("\nFreq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
                 fflush (stdout);
             }
 
@@ -1459,7 +1459,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                         SetSquelchLevel(sockfd, squelch - squelch_delta);
                     }
                     time_t hit_time = GetTime(timestamp);
-                    printf ("[%s] Freq: %s active,\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
+                    printf ("\n[%s] Freq: %s active,\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
                             timestamp, print_freq(current_freq),
                             level, squelch, Frequencies[i].noise_floor + squelch_delta);
                     fflush(stdout);
