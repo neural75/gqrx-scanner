@@ -122,8 +122,8 @@ const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
 char           *opt_hostname = NULL;
 int             opt_port = 0;
 freq_t          opt_freq = 0;
-freq_t          opt_min_freq = 24482800;
-freq_t          opt_max_freq = 1766172800;
+freq_t          opt_min_freq = 0;
+freq_t          opt_max_freq = 0;
 freq_t          opt_scan_bw = g_default_scan_bw;
 long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250 attempt to fix 'no delay argument given' stoppage on bookmark scan
 //LWVMOBILE: New variables inserted here
@@ -1559,7 +1559,6 @@ int main(int argc, char **argv) {
     if (
         (opt_min_freq > opt_max_freq)                        || // bad range or only min specified
         (opt_min_freq == 0 && opt_max_freq > 0)              || // or  only max specified
-        (opt_min_freq == 0 && opt_max_freq == 0)             || // or  none specified
         ((opt_min_freq != 0 && opt_max_freq != 0) &&            // or they are equal but different from 0
          (opt_min_freq == opt_max_freq)                  )
        ) // or only max specified
@@ -1569,15 +1568,6 @@ int main(int argc, char **argv) {
         printf ("Error: Invalid frequency range: begin:%s, end=%s.\n", from, to);
         printf ("       Please specify '-f <freq>' or '-b <begin_freq> -e <end_freq>.\n");
         print_usage(argv[0]);
-    }
-
-    if (opt_scan_mode == sweep)
-    {
-        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
-        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
-    }
-    else {
-        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
     }
 
 
@@ -1602,6 +1592,15 @@ int main(int argc, char **argv) {
             printf ("Warning: search tags on the entire frequency range!\n");
         }
 
+    }
+
+    if (opt_scan_mode == sweep)
+    {
+        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
+        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
+    }
+    else {
+        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
     }
 
     strcpy (from, print_freq(opt_min_freq));
