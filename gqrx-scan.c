@@ -988,7 +988,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         if (opt_squelch_delta_auto_enable){
                             squelch_backup = squelch;
                             SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
-                            printf ("[%s] Freq: %s active [%s],\nLevel: %2.2f/%2.2f, Squelch set: %f ",
+                            printf ("\n[%s] Freq: %s active [%s],\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
                                     timestamp, print_freq(current_freq),
                                     Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor + squelch_delta);
                         }
@@ -996,7 +996,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         {
                             squelch_backup = squelch;
                             SetSquelchLevel(sockfd, squelch - squelch_delta);
-                            printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f,\nNoise Floor: %f, Squelch set: %f ",
+                            printf ("\n[%s] Freq: %s active [%s], Level: %2.2f/%2.2f,\nNoise Floor: %f, Squelch set: %2.2f ",
                                     timestamp, print_freq(current_freq),
                                     Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor, squelch - squelch_delta);
                         }
@@ -1389,7 +1389,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             fflush(stdout);
             if (opt_verbose)
             {
-                printf("Freq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
+                printf("\nFreq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
                 fflush (stdout);
             }
 
@@ -1459,7 +1459,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                         SetSquelchLevel(sockfd, squelch - squelch_delta);
                     }
                     time_t hit_time = GetTime(timestamp);
-                    printf ("[%s] Freq: %s active,\nLevel: %2.2f/%2.2f, Squelch set: %f ",
+                    printf ("\n[%s] Freq: %s active,\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
                             timestamp, print_freq(current_freq),
                             level, squelch, Frequencies[i].noise_floor + squelch_delta);
                     fflush(stdout);
@@ -1559,7 +1559,6 @@ int main(int argc, char **argv) {
     if (
         (opt_min_freq > opt_max_freq)                        || // bad range or only min specified
         (opt_min_freq == 0 && opt_max_freq > 0)              || // or  only max specified
-        (opt_min_freq == 0 && opt_max_freq == 0)             || // or  none specified
         ((opt_min_freq != 0 && opt_max_freq != 0) &&            // or they are equal but different from 0
          (opt_min_freq == opt_max_freq)                  )
        ) // or only max specified
@@ -1569,15 +1568,6 @@ int main(int argc, char **argv) {
         printf ("Error: Invalid frequency range: begin:%s, end=%s.\n", from, to);
         printf ("       Please specify '-f <freq>' or '-b <begin_freq> -e <end_freq>.\n");
         print_usage(argv[0]);
-    }
-
-    if (opt_scan_mode == sweep)
-    {
-        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
-        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
-    }
-    else {
-        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
     }
 
 
@@ -1602,6 +1592,15 @@ int main(int argc, char **argv) {
             printf ("Warning: search tags on the entire frequency range!\n");
         }
 
+    }
+
+    if (opt_scan_mode == sweep)
+    {
+        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
+        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
+    }
+    else {
+        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
     }
 
     strcpy (from, print_freq(opt_min_freq));
