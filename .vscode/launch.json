@@ -6,14 +6,14 @@
         "request": "launch",
         "program": "${workspaceFolder}/bin/Debug/gqrx-scanner",
         "args":            [
-            "-y", "1",
+            //"-y", "1",
             //"-h", "localhost", 
             //"-p", "7356", 
             //"--mode", "bookmark",
             //"-f 429000000",
-            "--min", "460000000", 
-            "--max", "463000000",
-            "-vvv",
+            "--min", "172500000", 
+            "--max", "173600000",
+            "-v",
             //"--tags", "\"ponti\"",                 
             //"-d", "2"
         ],

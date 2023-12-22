@@ -156,7 +156,7 @@ void print_usage ( char *name )
 {
 
     printf ("Usage:\n");
-    printf ("%s\t[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]\n", name);
+    printf ("%s\n\t\t[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]\n", name);
     printf ("\t\t[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]\n");
     printf ("\t\t[-d|--delay <lingering time in milliseconds>]\n");
     printf ("\t\t[-l|--max-listen <maximum listening time in milliseconds>]\n");
@@ -266,7 +266,7 @@ bool ParseInputOptions (int argc, char **argv)
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "h:p:m:f:b:e:d:t:v:x:y:s:q:l:",
+        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:q:l:",
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
