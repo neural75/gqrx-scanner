@@ -1,36 +1,40 @@
 {
-    "version": "0.2.0",
     "configurations": [
-        {
-            "name": "(gdb) Launch",
-            "type": "cppdbg",
-            "request": "launch",
-            "program": "${workspaceRoot}/bin/Debug/gqrx-scanner",
-            "args": 
-            [
-                    "-y", "1",
-                    //"-h", "localhost", 
-                    //"-p", "7356", 
-                    //"--mode", "bookmark",
-                    //"-f 429000000",
-                    "--min", "460000000", 
-                    "--max", "463000000",
-                    "-vvv",
-                    //"--tags", "\"ponti\"",                 
-                    //"-d", "2"
-            ],
-            "stopAtEntry": false,
-            "cwd": "${workspaceRoot}",
-            "environment": [],
-            "externalConsole": true,
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": false
-                }
-            ]
-        }
+    {
+        "name": "(gdb) Launch",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/bin/Debug/gqrx-scanner",
+        "args":            [
+            "-y", "1",
+            //"-h", "localhost", 
+            //"-p", "7356", 
+            //"--mode", "bookmark",
+            //"-f 429000000",
+            "--min", "460000000", 
+            "--max", "463000000",
+            "-vvv",
+            //"--tags", "\"ponti\"",                 
+            //"-d", "2"
+        ],
+        "stopAtEntry": false,
+        "cwd": "${fileDirname}",
+        "environment": [],
+        "externalConsole": false,
+        "MIMode": "gdb",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for gdb",
+                "text": "-enable-pretty-printing",
+                "ignoreFailures": true
+            },
+            {
+                "description": "Set Disassembly Flavor to Intel",
+                "text": "-gdb-set disassembly-flavor intel",
+                "ignoreFailures": true
+            }
+        ]
+    }
     ]
+ 
 }
