@@ -6,16 +6,16 @@
         "request": "launch",
         "program": "${workspaceFolder}/bin/Debug/gqrx-scanner",
         "args":            [
-            //"-y", "1",
-            //"-h", "localhost", 
-            //"-p", "7356", 
-            //"--mode", "bookmark",
-            //"-f 429000000",
-            "--min", "172500000", 
+            "-y", "1",
+            "-h", "localhost",
+            "-p", "7356",
+            "--mode", "bookmark",
+            "-f 429000000",
+            "--min", "172500000",
             "--max", "173600000",
             "-v",
-            //"--tags", "\"ponti\"",                 
-            //"-d", "2"
+            "--tags", "\"ponti\"",
+            "-d", "2"
         ],
         "stopAtEntry": false,
         "cwd": "${fileDirname}",
@@ -36,5 +36,5 @@
         ]
     }
     ]
- 
+
 }
