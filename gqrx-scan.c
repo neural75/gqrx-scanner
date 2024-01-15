@@ -90,8 +90,8 @@ typedef enum
 // Stores
 /*FREQ Frequencies[FREQ_MAX] = {0};*/
 FREQ* Frequencies; //if user would exceed 4096 different frequencies counter it would be bad
-                   //I've took liberty of changing it to dynamic array
-                   //implementation in main after ParseInputOptions()
+//I've took liberty of changing it to dynamic array
+//implementation in main after ParseInputOptions()
 int  Frequencies_Max = 0;
 
 FREQ SavedFrequencies[SAVED_FREQ_MAX] = {0};
@@ -236,38 +236,38 @@ bool ParseTags (char *tags)
 
 bool ParseInputOptions (int argc, char **argv)
 {
-  int c;
+    int c;
 
-  while (1)
+    while (1)
     {
-      static struct option long_options[] =
-        {
-          /* These options set a flag. */
-          //{"verbose", no_argument,       &opt_verbose, 1},
-          /* These options don’t set a flag.
+        static struct option long_options[] =
+            {
+                /* These options set a flag. */
+                //{"verbose", no_argument,       &opt_verbose, 1},
+                /* These options don’t set a flag.
              We distinguish them by their indices. */
-          {"verbose", no_argument,       0, 'v'},
-          {"help",    no_argument,       0, 'w'},
-          {"host",    required_argument, 0, 'h'},
-          {"port",    required_argument, 0, 'p'},
-          {"mode",    required_argument, 0, 'm'},
-          {"freq",    required_argument, 0, 'f'},
-          {"min",     required_argument, 0, 'b'},
-          {"max",     required_argument, 0, 'e'},
-          {"step",    required_argument, 0, 's'},
-          {"tags",    required_argument, 0, 't'},
-          {"delay",   required_argument, 0, 'd'},
-          {"speed",   required_argument, 0, 'x'},
-          {"date",    required_argument, 0, 'y'},
-          {"squelch_delta",    required_argument, 0, 'q'},
-          {"max-listen",       required_argument, 0, 'l'},
-          {0, 0, 0, 0}
-        };
+                {"verbose", no_argument,       0, 'v'},
+                {"help",    no_argument,       0, 'w'},
+                {"host",    required_argument, 0, 'h'},
+                {"port",    required_argument, 0, 'p'},
+                {"mode",    required_argument, 0, 'm'},
+                {"freq",    required_argument, 0, 'f'},
+                {"min",     required_argument, 0, 'b'},
+                {"max",     required_argument, 0, 'e'},
+                {"step",    required_argument, 0, 's'},
+                {"tags",    required_argument, 0, 't'},
+                {"delay",   required_argument, 0, 'd'},
+                {"speed",   required_argument, 0, 'x'},
+                {"date",    required_argument, 0, 'y'},
+                {"squelch_delta",    required_argument, 0, 'q'},
+                {"max-listen",       required_argument, 0, 'l'},
+                {0, 0, 0, 0}
+            };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
         c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:q:l:",
-                        long_options, &option_index);
+                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
         //          if a following option is encountered getopt_long returns this option as the argument in optarg
@@ -288,10 +288,10 @@ bool ParseInputOptions (int argc, char **argv)
                 if (optarg)
                     printf (" with arg %s", optarg);
                 printf ("\n");
-            break;
+                break;
             case 'v':
                 opt_verbose = true;
-            break;
+                break;
             case 'h':
                 if (optarg[0] == '-')
                 {
@@ -299,7 +299,7 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 }
                 opt_hostname = optarg;
-            break;
+                break;
             case 'p':
                 if (optarg[0] == '-')
                 {
@@ -312,7 +312,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf("Error: -%c: invalid port\n", c);
                     print_usage(argv[0]);
                 }
-            break;
+                break;
             case 'm':
                 if (optarg[0] == '-')
                 {
@@ -329,7 +329,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -m, --mode <mode>. Mode not recognized. \n");
                     print_usage(argv[0]);
                 }
-            break;
+                break;
             case 'f':
                 if (optarg[0] == '-')
                 {
@@ -348,11 +348,11 @@ bool ParseInputOptions (int argc, char **argv)
                     opt_max_freq = opt_freq + g_freq_delta;
                 }
                 else
-                {
+            {
                     printf ("Error: -%c: Invalid frequency\n", c);
                     print_usage(argv[0]);
                 }
-            break;
+                break;
             case 'b':
                 if (optarg[0] == '-')
                 {
@@ -366,7 +366,7 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 }
 
-            break;
+                break;
             case 'e':
                 if (optarg[0] == '-')
                 {
@@ -379,7 +379,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid frequency\n", c);
                     print_usage(argv[0]);
                 }
-            break;
+                break;
             case 'd':
                 if (optarg[0] == '-')
                 {
@@ -393,7 +393,7 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 }
                 opt_delay *= 1000; // in microsec
-            break;
+                break;
 
             case 'l':
                 if (optarg[0] == '-')
@@ -408,7 +408,7 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 }
                 opt_max_listen *= 1000; // in microsec
-            break;
+                break;
 
             case 'x':
                 if (optarg[0] == '-')
@@ -423,7 +423,7 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 }
                 opt_speed *= 1000; // in microsec //LWVMOBILE: Made new opt_speed variable. Implemented and working for bookmark mode.
-            break;
+                break;
 
             case 'y':
                 if (optarg[0] == '-')
@@ -439,7 +439,7 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid date option\n", c);
                     print_usage(argv[0]);
                 }
-            break;
+                break;
 
             case 'q':
                 if (optarg[0] == '-')
@@ -457,7 +457,7 @@ bool ParseInputOptions (int argc, char **argv)
                     opt_squelch_delta_auto_enable = true;
                 }
                 else
-                {
+            {
                     if ((opt_squelch_delta = atof(optarg)) == 0)
                     {
                         printf ("Error: -%c: Invalid squelch level\n", c);
@@ -465,7 +465,7 @@ bool ParseInputOptions (int argc, char **argv)
                     }
                 }
                 printf("Squelch delta set: %f\n", opt_squelch_delta);
-            break;
+                break;
 
             case 't':
                 if (optarg[0] == '-')
@@ -479,7 +479,7 @@ bool ParseInputOptions (int argc, char **argv)
                     print_usage(argv[0]);
                 optind++;
                 opt_tag_search = true;
-            break;
+                break;
 
             case 's':
                 if (optarg[0] == '-')
@@ -589,14 +589,14 @@ time_t GetTime(char *timestamp)
     struct tm *ltime = localtime (&etime);
     switch (opt_date)
     {
-	    case 0:
-    		sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mon+1, ltime->tm_mday, ltime->tm_year%100,
-            		ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
-		break;
-	    case 1:
-	    	sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,
-        	        ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
-		break;
+        case 0:
+            sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mon+1, ltime->tm_mday, ltime->tm_year%100,
+                    ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
+        break;
+        case 1:
+            sprintf(timestamp, "%2.2d-%2.2d-%2.2d %2.2d:%2.2d:%2.2d", ltime->tm_mday, ltime->tm_mon+1, ltime->tm_year%100,
+                    ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
+        break;
     }
     return etime;
 }
@@ -619,15 +619,15 @@ time_t DiffTime(char *timestamp, time_t start_time)
 
     if (ltime->tm_mday > 1)
     {
-          char days[10];
-          sprintf(days, "%2d days ", ltime->tm_mday);
-          strcat(timestamp, days);
+        char days[10];
+        sprintf(days, "%2d days ", ltime->tm_mday);
+        strcat(timestamp, days);
     }
     if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
     {
-          char hours[10];
-          sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
-          strcat(timestamp, hours);
+        char hours[10];
+        sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
+        strcat(timestamp, hours);
     }
 
     if (ltime->tm_min > 0)
@@ -636,9 +636,9 @@ time_t DiffTime(char *timestamp, time_t start_time)
         sprintf(min, "%2.2d:", ltime->tm_min);
         strcat(timestamp, min);
     }
-        char sec[16];
-        sprintf(sec, "%2.2d sec", ltime->tm_sec);
-        strcat(timestamp, sec);
+    char sec[16];
+    sprintf(sec, "%2.2d sec", ltime->tm_sec);
+    strcat(timestamp, sec);
     return elapsed;
 }
 
@@ -668,17 +668,17 @@ void CheckUserInput (void)
             switch (c)
             {
                 case 'c':
-                {
-                    // Clear all bans
-                    ClearAllBans();
-                    continue;
-                }
+                    {
+                        // Clear all bans
+                        ClearAllBans();
+                        continue;
+                    }
                 case 'p':
-                {
-                    // pause until another 'p'
-                    pause ^= true; // switch pause mode
-                    break;
-                }
+                    {
+                        // pause until another 'p'
+                        pause ^= true; // switch pause mode
+                        break;
+                    }
                 default:
                     break;
             }
@@ -731,33 +731,33 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
             {
                 case ' ':
                 case '\n':
-                {
-                    exit = 1; // exit
-                    skip = true;
-                    break;
-                }
+                    {
+                        exit = 1; // exit
+                        skip = true;
+                        break;
+                    }
                 case 'b':
-                {
-                    // Ban a frequency
-                    BanFreq(*current_freq);
-                    exit = 1;
-                    skip = true;
-                    break;
-                }
+                    {
+                        // Ban a frequency
+                        BanFreq(*current_freq);
+                        exit = 1;
+                        skip = true;
+                        break;
+                    }
                 case 'c':
-                {
-                    // Clear all bans
-                    ClearAllBans();
-                    exit = 0;
-                    break;
-                }
+                    {
+                        // Clear all bans
+                        ClearAllBans();
+                        exit = 0;
+                        break;
+                    }
                 case 'p':
-                {
-                    // pause until another 'p'
-                    pause ^= true; // switch pause mode
-                    exit = 0;
-                    break;
-                }
+                    {
+                        // pause until another 'p'
+                        pause ^= true; // switch pause mode
+                        exit = 0;
+                        break;
+                    }
                 default:
                     exit = 0;
 
@@ -793,7 +793,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
             }
         }
         else
-        {
+    {
             sleep_time = 0; //
         }
         // someone is tx'ing
@@ -832,10 +832,10 @@ FILE * Open (const char * filename)
         sprintf(filename2, "%s%s", homedir, filename+1);
     }
     else
-        sprintf(filename2, "%s", filename);
+    sprintf(filename2, "%s", filename);
 
+filefd = fopen(filename2, "r");
 
-    filefd = fopen (filename2, "r");
     if (filefd == (FILE *)NULL)
         error("ERROR opening gqrx bookmarks file");
 
@@ -971,47 +971,47 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
             if (IsBannedFreq(&current_freq))
                 continue;
             if ( ( ( current_freq >= freq_min) &&         // in the valid range
-                   ( current_freq <  freq_max)    ) ||
-                 (freq_min == freq_max)                )  // or using the entire frequencies
+                ( current_freq <  freq_max)    ) ||
+                (freq_min == freq_max)                )  // or using the entire frequencies
+            {
+                // Found a bookmark in the range
+                SetFreq(sockfd, current_freq);
+                GetSquelchLevel(sockfd, &squelch);
+                //usleep((skip)?sleep_cycle_active:sleep_cyle_saved);       //LWVMOBILE: Perhaps place a small sleep here of 1000ms, slow scan to prevent 'slipping' issue in bookmark search.
+                //usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
+                usleep((skip)?slow_scan_cycle:opt_speed);                   //LWVMOBILE: Using new variable set by default and also by user switch. Seems to work. GJ ME.
+                // LWVMOBILE: Scan stoppage due to no delay argument given has been fixed, was a variable set way too high.
+                GetSignalLevelEx(sockfd, &level, 5 );
+                if (level >= squelch)
                 {
-                    // Found a bookmark in the range
-                    SetFreq(sockfd, current_freq);
-                    GetSquelchLevel(sockfd, &squelch);
-                    //usleep((skip)?sleep_cycle_active:sleep_cyle_saved);       //LWVMOBILE: Perhaps place a small sleep here of 1000ms, slow scan to prevent 'slipping' issue in bookmark search.
-                    //usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
-                    usleep((skip)?slow_scan_cycle:opt_speed);                   //LWVMOBILE: Using new variable set by default and also by user switch. Seems to work. GJ ME.
-                    // LWVMOBILE: Scan stoppage due to no delay argument given has been fixed, was a variable set way too high.
-                    GetSignalLevelEx(sockfd, &level, 5 );
-                    if (level >= squelch)
+                    time_t hit_time = GetTime(timestamp);
+                    if (opt_squelch_delta_auto_enable)
                     {
-                        time_t hit_time = GetTime(timestamp);
-                        if (opt_squelch_delta_auto_enable)
-                        {
-                            squelch_backup = squelch;
-                            SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
-                            printf ("\n[%s] Freq: %s active [%s],\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
-                                    timestamp, print_freq(current_freq),
-                                    Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor + squelch_delta);
-                        }
-                        else
-                        {
-                            printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
-                                    timestamp, print_freq(current_freq),
-                                    Frequencies[i].descr, level, squelch);
-                        }
-                        fflush(stdout);
-                        skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
-                        time_t elapsed = DiffTime(timestamp, hit_time);
-                        printf (" [elapsed time %s]\n", timestamp);
-                        if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
-                        fflush(stdout);
+                        squelch_backup = squelch;
+                        SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
+                        printf ("\n[%s] Freq: %s active [%s],\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
+                                timestamp, print_freq(current_freq),
+                                Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor + squelch_delta);
                     }
                     else
-                    {
-                        Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
-                        skip = false;
+                {
+                        printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
+                                timestamp, print_freq(current_freq),
+                                Frequencies[i].descr, level, squelch);
                     }
+                    fflush(stdout);
+                    skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
+                    time_t elapsed = DiffTime(timestamp, hit_time);
+                    printf (" [elapsed time %s]\n", timestamp);
+                    if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
+                    fflush(stdout);
                 }
+                else
+            {
+                    Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
+                    skip = false;
+                }
+            }
         }
 
     }
@@ -1422,7 +1422,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     continue;
                 }
                 else
-                {
+            {
                     // Frequency acquired successfully
                     // Or.. we could have jumped on another frequency with a valid signal nearby.
                     success_counter++;
@@ -1447,7 +1447,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     skip = true;
                 }
                 else
-                {
+            {
                     SaveFreq(current_freq);
                     if (opt_squelch_delta_auto_enable){
                         squelch_backup = squelch;
@@ -1462,7 +1462,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                                 level, squelch, Frequencies[i].noise_floor + squelch_delta);
                     }
                     else
-                    {
+                {
                         printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
                                 timestamp, print_freq(current_freq),
                                 level, squelch );
@@ -1482,7 +1482,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 }
             }
             else
-            {
+        {
                 skip = false;
                 Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
                 // no activities
@@ -1508,7 +1508,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 }
                 // search candidates into saved frequencies
                 while ( (SavedFrequencies[saved_idx].count < min_hit_threshold) && //hit threshold
-                        (saved_idx < SavedFreq_Max) )
+                    (saved_idx < SavedFreq_Max) )
                 {
                     saved_idx++;
                 }
@@ -1521,7 +1521,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     current_freq = ceil( current_freq / (double)opt_scan_bw ) * opt_scan_bw;
                 }
                 else // found one
-                {
+            {
                     current_freq = SavedFrequencies[saved_idx].freq;
                     current_saved_idx = saved_idx;
                     saved_idx++;
@@ -1565,8 +1565,8 @@ int main(int argc, char **argv) {
         (opt_min_freq > opt_max_freq)                        || // bad range or only min specified
         (opt_min_freq == 0 && opt_max_freq > 0)              || // or  only max specified
         ((opt_min_freq != 0 && opt_max_freq != 0) &&            // or they are equal but different from 0
-         (opt_min_freq == opt_max_freq)                  )
-       ) // or only max specified
+        (opt_min_freq == opt_max_freq)                  )
+    ) // or only max specified
     {
         strcpy (from, print_freq(opt_min_freq));
         strcpy (to,   print_freq(opt_max_freq));
@@ -1590,7 +1590,7 @@ int main(int argc, char **argv) {
         }
     }
     else
-    {
+{
         // more tollerating with tags (bookmark mode)
         if (opt_min_freq == opt_max_freq) // user has not set values or has set equals.
         {
@@ -1648,7 +1648,7 @@ int main(int argc, char **argv) {
         ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_scan_bw, opt_squelch_delta);
     }
     else
-    {
+{
         ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_squelch_delta);
     }
 
