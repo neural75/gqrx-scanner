@@ -160,8 +160,8 @@ bool GetSignalLevel(int sockfd, double *dBFS)
         return false;
 
     sscanf(buf, "%lf", dBFS);
+    printf("Signal level: %f dBFS\n", *dBFS);
     *dBFS = round((*dBFS) * 10)/10;
-
     if (*dBFS == 0.0)
         return false;
     return true;
@@ -207,12 +207,14 @@ bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp)
     int errors = 0;
     for (int i = 0; i < n_samp; i++)
     {
-        if ( GetSignalLevel(sockfd, &temp_level) )
+        if ( GetSignalLevel(sockfd, &temp_level) ) {
             *dBFS = *dBFS + temp_level;
+        }
         else
             errors++;
         usleep(1000);
     }
+    //lets promote level torward the best value
     *dBFS = *dBFS / (n_samp - errors);
     return true;
 }

@@ -936,7 +936,6 @@ freq_t FilterFrequency (int idx)
 
 bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta)
 {
-
     freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
     double level = 0;
@@ -954,13 +953,14 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     long slow_scan_cycle    = 1000000;   // LWVMOBILE: Just doubling numbers to slow down scan time in bookmark search, 1,000,000 = 1 second. EDIT: DOES THIS VARIABLE DO ANYTHING?
     long slow_cycle_saved   = 250000;  // LWVMOBILE: Just doubling numbers to slow down scan time in bookmark search. THIS ONE SEEMS TO ACTUALLY SLOW SCAN SPEED DOWN.
     char timestamp[BUFSIZE] = {0};
+
     while (true)
     {
         CheckUserInput();
 
         for (int i = 0; i < Frequencies_Max; i++)
         {
-            if (Frequencies[i].noise_floor == 0)
+           if (Frequencies[i].noise_floor == 0)
                 Frequencies[i].noise_floor = level;
 
             //printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
@@ -981,7 +981,10 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                 //usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
                 usleep((skip)?slow_scan_cycle:opt_speed);                   //LWVMOBILE: Using new variable set by default and also by user switch. Seems to work. GJ ME.
                 // LWVMOBILE: Scan stoppage due to no delay argument given has been fixed, was a variable set way too high.
-                GetSignalLevelEx(sockfd, &level, 5 );
+
+                // Get the signal level. Taking average from 5 samples doesn't have any benefits. Just adding more delay.
+                GetSignalLevelEx(sockfd, &level, 1 );
+
                 if (level >= squelch)
                 {
                     time_t hit_time = GetTime(timestamp);
@@ -1013,9 +1016,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                 }
             }
         }
-
     }
-
 }
 
 //
@@ -1643,12 +1644,10 @@ int main(int argc, char **argv) {
         printf ("%d candidate frequencies found.\n", count);
     }
 
-    if (opt_scan_mode == sweep)
-    {
+    if (opt_scan_mode == sweep) {
         ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_scan_bw, opt_squelch_delta);
     }
-    else
-{
+    else {
         ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_squelch_delta);
     }
 

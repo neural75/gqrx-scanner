@@ -1,40 +1,66 @@
 {
+    "version": "0.2.0",
     "configurations": [
-    {
-        "name": "(gdb) Launch",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/bin/Debug/gqrx-scanner",
-        "args":            [
-            "-y", "1",
-            "-h", "localhost",
-            "-p", "7356",
-            "--mode", "bookmark",
-            "-f 429000000",
-            "--min", "172500000",
-            "--max", "173600000",
-            "-v",
-            "--tags", "\"ponti\"",
-            "-d", "2"
-        ],
-        "stopAtEntry": false,
-        "cwd": "${fileDirname}",
-        "environment": [],
-        "externalConsole": false,
-        "MIMode": "gdb",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for gdb",
-                "text": "-enable-pretty-printing",
-                "ignoreFailures": true
-            },
-            {
-                "description": "Set Disassembly Flavor to Intel",
-                "text": "-gdb-set disassembly-flavor intel",
-                "ignoreFailures": true
-            }
-        ]
-    }
+        {
+            "type": "c",
+            "request": "launch",
+            "name": "scan test",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "setupCommands": [
+                {
+                    "description": "Pretty print gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "env": [],
+            "cwd": "${workspaceFolder}/bin/",
+            "program": "${workspaceFolder}/bin/gqrx-scanner",
+            "args": [
+                "-v",
+                "-m", "bookmark",
+                "-t", "\"Moje|asdf\"",
+                "-q", "a4.0",
+                "-x", "50"
+            ]
+        },
+        {
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/Debug/gqrx-scanner",
+            "args":            [
+                "-y", "1",
+                "-h", "localhost",
+                "-p", "7356",
+                "--mode", "bookmark",
+                "-f 429000000",
+                "--min", "172500000",
+                "--max", "173600000",
+                "-v",
+                "--tags", "\"ponti\"",
+                "-d", "2"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
     ]
-
 }
