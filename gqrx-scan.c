@@ -67,7 +67,7 @@ SOFTWARE.
 
 #define NB_ENABLE    true
 #define NB_DISABLE   false
-#define PREV_FREQ_MAX 4
+#define PREV_FREQ_MAX 10
 
 //
 // Globals definitions
@@ -936,7 +936,7 @@ freq_t FilterFrequency (int idx)
 }
 
 // by design, the first element is the current frequency
-// armed every for iteration
+// armed every *for* iteration
 void PrevFreqIndexes(size_t * indexes , size_t append) {
     for (size_t i = PREV_FREQ_MAX - 1; i > 0 ; i--)
     {
@@ -972,7 +972,6 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
 
         for (int i = 0; i < Frequencies_Max; i++)
         {
-            PrevFreqIndexes(indexes, i);
             if (Frequencies[i].noise_floor == 0)
                 Frequencies[i].noise_floor = level;
 
@@ -983,10 +982,14 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                 continue;
             if (IsBannedFreq(&current_freq))
                 continue;
-            if ( ( ( current_freq >= freq_min) &&         // in the valid range
-                ( current_freq <  freq_max)    ) ||
-                (freq_min == freq_max)                )  // or using the entire frequencies
+            if (
+                (
+                ( current_freq >= freq_min) &&         // in the valid range
+                ( current_freq <  freq_max)
+            ) || (freq_min == freq_max)  // or using the entire frequencies
+            )
             {
+                PrevFreqIndexes(indexes, i);
                 // Found a bookmark in the range
                 SetFreq(sockfd, current_freq);
                 GetSquelchLevel(sockfd, &squelch);
@@ -998,8 +1001,37 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                 // Get the signal level. Taking average from 5 samples doesn't have any benefits. Just adding more delay.
                 GetSignalLevelEx(sockfd, &level, 1 );
 
+
                 if (level >= squelch)
                 {
+                    // reassure that it's a valid signal
+                    // overshoot mitigation
+                    //
+                    bool skip_mitigation = false;
+                    for (size_t j = 1; j < PREV_FREQ_MAX; j++)
+                    {
+                        usleep(350000); // 100 ms
+                        GetSignalLevelEx(sockfd, &level, 1 );
+                        if (level < squelch)
+                        {
+                            i = indexes[j];
+                            current_freq = FilterFrequency(i);
+                            SetFreq(sockfd, current_freq);
+                            if (j == PREV_FREQ_MAX - 1)
+                            {
+                                skip_mitigation = true;
+                            }
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    if (skip_mitigation)
+                    {
+                        continue;
+                    }
+
                     time_t hit_time = GetTime(timestamp);
                     if (opt_squelch_delta_auto_enable)
                     {

@@ -22,7 +22,7 @@
             "args": [
                 "-v",
                 "-m", "bookmark",
-                "-t", "\"Moje|asdf\"",
+                "-t", "\"Moje|Add\"",
                 "-q", "a4.0",
                 "-x", "50"
             ]
