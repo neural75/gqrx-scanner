@@ -160,7 +160,6 @@ bool GetSignalLevel(int sockfd, double *dBFS)
         return false;
 
     sscanf(buf, "%lf", dBFS);
-    printf("Signal level: %f dBFS\n", *dBFS);
     *dBFS = round((*dBFS) * 10)/10;
     if (*dBFS == 0.0)
         return false;

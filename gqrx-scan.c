@@ -67,6 +67,7 @@ SOFTWARE.
 
 #define NB_ENABLE    true
 #define NB_DISABLE   false
+#define PREV_FREQ_MAX 4
 
 //
 // Globals definitions
@@ -934,8 +935,19 @@ freq_t FilterFrequency (int idx)
     return current_freq;
 }
 
+// by design, the first element is the current frequency
+// armed every for iteration
+void PrevFreqIndexes(size_t * indexes , size_t append) {
+    for (size_t i = PREV_FREQ_MAX - 1; i > 0 ; i--)
+    {
+        indexes[i] = indexes[i-1];
+    }
+    indexes[0] = append;
+}
+
 bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta)
 {
+    size_t indexes[PREV_FREQ_MAX] = {0};
     freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
     double level = 0;
@@ -960,7 +972,8 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
 
         for (int i = 0; i < Frequencies_Max; i++)
         {
-           if (Frequencies[i].noise_floor == 0)
+            PrevFreqIndexes(indexes, i);
+            if (Frequencies[i].noise_floor == 0)
                 Frequencies[i].noise_floor = level;
 
             //printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
