@@ -968,15 +968,44 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     long slow_cycle_saved   = 250000;  // LWVMOBILE: Just doubling numbers to slow down scan time in bookmark search. THIS ONE SEEMS TO ACTUALLY SLOW SCAN SPEED DOWN.
     char timestamp[BUFSIZE] = {0};
 
+    //Noise floor calibration
+    //Moving it here to again: mitigate overshooting
+    printf("Calibrating noise floor...\n");
+
+    for (int j = 0 ; j < 5; j++)
+    {
+        for (int i = 0; i < Frequencies_Max; i++)
+        {
+            if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
+                continue;
+            if (IsBannedFreq(&current_freq))
+                continue;
+            if (
+                (
+                ( current_freq >= freq_min) &&         // in the valid range
+                ( current_freq <  freq_max)
+            ) || (freq_min == freq_max)  // or using the entire frequencies
+            )
+            {
+                SetFreq(sockfd, current_freq);
+                usleep(500000);
+                GetSignalLevel(sockfd, &level );
+                while (level >= squelch)
+                {
+                    usleep(500000);
+                    GetSignalLevel(sockfd, &level );
+                }
+                Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
+            }
+        }
+    }
+
     while (true)
     {
         CheckUserInput();
 
         for (int i = 0; i < Frequencies_Max; i++)
         {
-            if (Frequencies[i].noise_floor == 0)
-                Frequencies[i].noise_floor = level;
-
             //printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
             //fflush(stdout);
 
@@ -1018,11 +1047,13 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         printf("\n");
                     // reassure that it's a valid signal
                     // GetSignalLevel() overshoot mitigation
-                    //
+                    // That's because there's no way of telling after sending GetSignalLevel() command
+                    // if the signal is bound to that frequency or not.
+
                     bool skip_mitigation = false;
                     for (size_t j = 1; j < PREV_FREQ_MAX; j++)
                     {
-                        usleep(350000); // 100 ms
+                        usleep(350000);
                         GetSignalLevelEx(sockfd, &level, 5 );
                         if (level < squelch)
                         {
@@ -1066,7 +1097,6 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     fflush(stdout);
                 }
                 else {
-                    Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
                     skip = false;
                 }
             }
