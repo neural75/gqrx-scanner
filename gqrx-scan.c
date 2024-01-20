@@ -40,6 +40,7 @@ SOFTWARE.
 #else
 #endif
 #include <stdlib.h>
+#include <pthread.h>
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
@@ -109,6 +110,7 @@ static char freq_string[BUFSIZE] = {0};
 //
 const char     *g_hostname          = "localhost";
 const int       g_portno            = 7356;
+const int       g_udp_listen        = 7355;
 const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq.
 const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
@@ -122,6 +124,7 @@ const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
 //
 char           *opt_hostname = NULL;
 int             opt_port = 0;
+int             opt_udp_listen = 0;
 freq_t          opt_freq = 0;
 freq_t          opt_min_freq = 0;
 freq_t          opt_max_freq = 0;
@@ -290,9 +293,6 @@ bool ParseInputOptions (int argc, char **argv)
                     printf (" with arg %s", optarg);
                 printf ("\n");
                 break;
-            case 'v':
-                opt_verbose = true;
-                break;
             case 'h':
                 if (optarg[0] == '-')
                 {
@@ -353,6 +353,9 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid frequency\n", c);
                     print_usage(argv[0]);
                 }
+                break;
+            case 'v':
+                opt_verbose = true;
                 break;
             case 'b':
                 if (optarg[0] == '-')
@@ -457,8 +460,7 @@ bool ParseInputOptions (int argc, char **argv)
                     }
                     opt_squelch_delta_auto_enable = true;
                 }
-                else
-            {
+                else {
                     if ((opt_squelch_delta = atof(optarg)) == 0)
                     {
                         printf ("Error: -%c: Invalid squelch level\n", c);
@@ -1001,17 +1003,27 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                 // Get the signal level. Taking average from 5 samples doesn't have any benefits. Just adding more delay.
                 GetSignalLevelEx(sockfd, &level, 1 );
 
+                // printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
+                // fflush(stdout);
+                //
+                if (opt_verbose)
+                {
+                    printf("\rFreq: %s Signal: %2.2f Squelch: %2.2f", print_freq(current_freq), level, squelch);
+                    fflush (stdout);
+                }
 
                 if (level >= squelch)
                 {
+                    if (opt_verbose)
+                        printf("\n");
                     // reassure that it's a valid signal
-                    // overshoot mitigation
+                    // GetSignalLevel() overshoot mitigation
                     //
                     bool skip_mitigation = false;
                     for (size_t j = 1; j < PREV_FREQ_MAX; j++)
                     {
                         usleep(350000); // 100 ms
-                        GetSignalLevelEx(sockfd, &level, 1 );
+                        GetSignalLevelEx(sockfd, &level, 5 );
                         if (level < squelch)
                         {
                             i = indexes[j];
@@ -1041,8 +1053,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                                 timestamp, print_freq(current_freq),
                                 Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor + squelch_delta);
                     }
-                    else
-                {
+                    else {
                         printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
                                 timestamp, print_freq(current_freq),
                                 Frequencies[i].descr, level, squelch);
@@ -1054,8 +1065,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
                     fflush(stdout);
                 }
-                else
-            {
+                else {
                     Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
                     skip = false;
                 }
@@ -1593,6 +1603,7 @@ int main(int argc, char **argv) {
 
     opt_hostname = (char *) g_hostname;
     opt_port     = g_portno;
+    opt_udp_listen = g_udp_listen;
     opt_delay    = g_delay;
     ParseInputOptions(argc, argv);
 

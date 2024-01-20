@@ -20,11 +20,11 @@
             "cwd": "${workspaceFolder}/bin/",
             "program": "${workspaceFolder}/bin/gqrx-scanner",
             "args": [
-                "-v",
                 "-m", "bookmark",
-                "-t", "\"Moje|Add\"",
+                "-t", "\"Moje\"",
                 "-q", "a4.0",
-                "-x", "50"
+                "-x", "50",
+                "--verbose"
             ]
         },
         {
