@@ -21,9 +21,10 @@
             "program": "${workspaceFolder}/bin/gqrx-scanner",
             "args": [
                 "-m", "bookmark",
-                "-t", "\"Moje\"",
+                "-t", "\"Moje|Add\"",
                 "-q", "a4.0",
                 "-x", "50",
+                "-a", "8.0",
                 "--verbose"
             ]
         },
