@@ -1484,6 +1484,10 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
     char timestamp[BUFSIZE] = {0};
     int  success_counter    = 0;  // number of correctly acquired signals, reset on bad signals or reaching success_factor
     int  success_factor     = 5; // improving sleep cycle every success_factor of times
+    double * chosen_squelch = NULL;
+
+    if (opt_squelch_delta_top == 0.0)
+        chosen_squelch = &squelch;
 
     while (true)
     {
@@ -1502,19 +1506,27 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             GetSignalLevelEx(sockfd, &level, 5 );
 
             if (Frequencies[i].noise_floor == 0)
+            {
                 Frequencies[i].noise_floor = level;
-
-            //printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
-            //fflush(stdout);
+                Frequencies[i].squelch_delta_top = Frequencies[i].noise_floor + opt_squelch_delta_top;
+            }
 
             if (opt_verbose)
             {
-                printf("\nFreq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
+                printf("\rFreq: %s Signal: %2.2f Squelch: %2.2f", print_freq(current_freq), level, squelch);
                 fflush (stdout);
             }
 
-            if (level >= squelch)
+            if (opt_squelch_delta_top > 0)
             {
+                chosen_squelch = &Frequencies[i].squelch_delta_top;
+            }
+
+            if (level >= *chosen_squelch)
+            {
+                if (opt_verbose){
+                    printf("\n");
+                }
                 // we have a possible match, but sometimes level oscillates after a squelch miss
                 bool still_good = Debounce(sockfd, current_freq, level);
                 if (!still_good)
@@ -1605,6 +1617,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
         {
                 skip = false;
                 Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
+                Frequencies[i].squelch_delta_top = Frequencies[i].noise_floor + opt_squelch_delta_top;
                 // no activities
                 if (saved_cycle)
                 {

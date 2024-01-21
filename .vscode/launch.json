@@ -4,7 +4,7 @@
         {
             "type": "c",
             "request": "launch",
-            "name": "scan test",
+            "name": "scan test bookmark",
             "MIMode": "gdb",
             "miDebuggerPath": "/usr/bin/gdb",
             "stopAtEntry": false,
@@ -22,9 +22,37 @@
             "args": [
                 "-m", "bookmark",
                 "-t", "\"Moje|Add\"",
-                "-q", "a4.0",
+                "-q", "a3.0",
                 "-x", "50",
-                "-a", "8.0",
+                "-a", "6.0",
+                "--verbose"
+            ]
+        },
+        {
+            "type": "c",
+            "request": "launch",
+            "name": "scan test sweep",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "setupCommands": [
+                {
+                    "description": "Pretty print gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "env": [],
+            "cwd": "${workspaceFolder}/bin/",
+            "program": "${workspaceFolder}/bin/gqrx-scanner",
+            "args": [
+                "-m", "sweep",
+                "-q", "a3.0",
+                "-a", "6.0",
+                "-s","12500",
+                "-b", "144000000",
+                "-e", "146000000",
                 "--verbose"
             ]
         },
