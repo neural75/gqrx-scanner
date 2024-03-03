@@ -21,6 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,7 @@ SOFTWARE.
 #include <math.h>
 #include "gqrx-prot.h"
 
+#define MAX_BUF_SIZE 1472
 //
 // error - wrapper for perror
 //
@@ -53,6 +55,51 @@ void error(char *msg) {
 //
 // Connect
 //
+int UdpConnect (char *hostname, int portno)
+{
+    int sockfd;
+    struct sockaddr_in6 server_addr;
+    struct hostent *server;
+
+    if ((sockfd = socket(AF_INET6, SOCK_DGRAM, 0)) < 0) {
+        perror("socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    server = gethostbyname2(hostname, AF_INET6);
+
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin6_family = AF_INET6;
+    inet_pton(AF_INET6, hostname, &server_addr.sin6_addr);
+    server_addr.sin6_port = htons(portno); // Port number
+
+    if (bind(sockfd, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }
+
+    return sockfd;
+}
+
+// check if there is a signal
+int IsThereASignal(int sockfd)
+{
+    char buffer[MAX_BUF_SIZE];
+    struct sockaddr_in6 client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    ssize_t recv_len = recvfrom(sockfd, (char *)buffer, MAX_BUF_SIZE,MSG_TRUNC,
+                                (struct sockaddr *)&client_addr, &client_len);
+
+    if (recv_len < 0) {
+        perror("recvfrom failed");
+        exit(EXIT_FAILURE);
+    }
+    if (buffer[1] != '\0')
+        return 1;
+
+    return 0;
+}
+
 int Connect (char *hostname, int portno)
 {
     int sockfd, n;

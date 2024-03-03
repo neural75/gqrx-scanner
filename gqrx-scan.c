@@ -68,7 +68,7 @@ SOFTWARE.
 
 #define NB_ENABLE    true
 #define NB_DISABLE   false
-#define PREV_FREQ_MAX 5
+#define PREV_FREQ_MAX 6
 
 //
 // Globals definitions
@@ -111,7 +111,7 @@ static char freq_string[BUFSIZE] = {0};
 //
 const char     *g_hostname          = "localhost";
 const int       g_portno            = 7356;
-const int       g_udp_listen        = 7355;
+const int       g_udp_listen_portno = 7355;
 const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq.
 const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
@@ -125,7 +125,7 @@ const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
 //
 char           *opt_hostname = NULL;
 int             opt_port = 0;
-int             opt_udp_listen = 0;
+int             opt_udp_listen_port = 0;
 freq_t          opt_freq = 0;
 freq_t          opt_min_freq = 0;
 freq_t          opt_max_freq = 0;
@@ -137,6 +137,7 @@ long            opt_date = 0;
 //LWVMOBILE; End new variables.
 SCAN_MODE       opt_scan_mode = sweep;
 bool            opt_tag_search = false;
+bool            opt_udp_listen = false;
 char           *opt_tags[TAG_MAX] = {0};
 int             opt_tag_max = 0;
 bool            opt_disable_store = false;
@@ -195,10 +196,12 @@ void print_usage ( char *name )
     printf ("                             Ex.: a0.5\n");
     printf ("-a, --squelch_delta_top <dB> It maps squelch levels for an each scanned frequency\n");
     printf ("                             based on noise floor + provided value.\n");
-    printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
-    printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
-    printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
-    printf ("                               Works only with -m bookmark scan mode\n");
+    printf ("-u, --udp_listen             Experimental: Trigger listening on UDP audio signal.\n");
+    printf ("                             Make sure that UDP button is pushed.\n");
+    printf ("-t, --tags <\"tags\">        Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
+    printf ("                             \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
+    printf ("                             tags are case insensitive and match also for partial string contained in a tag\n");
+    printf ("                             Works only with -m bookmark scan mode\n");
     //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");
@@ -254,11 +257,11 @@ bool ParseInputOptions (int argc, char **argv)
                 //{"verbose", no_argument,       &opt_verbose, 1},
                 /* These options don’t set a flag.
              We distinguish them by their indices. */
-                {"verbose", no_argument,       0, 'v'},
-                {"help",    no_argument,       0, 'w'},
-                {"host",    required_argument, 0, 'h'},
-                {"port",    required_argument, 0, 'p'},
-                {"mode",    required_argument, 0, 'm'},
+                {"verbose",               no_argument,       0, 'v'},
+                {"help",                  no_argument,       0, 'w'},
+                {"host",            required_argument, 0, 'h'},
+                {"port",            required_argument, 0, 'p'},
+                {"mode",            required_argument, 0, 'm'},
                 {"freq",    required_argument, 0, 'f'},
                 {"min",     required_argument, 0, 'b'},
                 {"max",     required_argument, 0, 'e'},
@@ -269,13 +272,14 @@ bool ParseInputOptions (int argc, char **argv)
                 {"date",    required_argument, 0, 'y'},
                 {"squelch_delta",    required_argument, 0, 'q'},
                 {"squelch_delta_top",    required_argument, 0, 'a'},
+                {"udp_listen",    no_argument, 0, 'u'},
                 {"max-listen",       required_argument, 0, 'l'},
                 {0, 0, 0, 0}
             };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:q:a:l:",
+        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:q:a:l:u:",
                          long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -515,6 +519,13 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid frequency step\n", c);
                     print_usage(argv[0]);
                 }
+                break;
+            case 'u':
+                if (opt_scan_mode == sweep){
+                    printf ("Cannot use --udp_listen in sweep mode.\n");
+                    print_usage(argv[0]);
+                }
+                opt_udp_listen = true;
                 break;
             case '?':
             /* getopt_long already printed an error message. */
@@ -966,7 +977,7 @@ void PrevFreqIndexes(size_t * indexes , size_t append) {
     indexes[0] = append;
 }
 
-bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta)
+bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta)
 {
     size_t indexes[PREV_FREQ_MAX] = {0};
     freq_t freq = 0;
@@ -1031,6 +1042,8 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     }
     printf(" done.\n");
 
+    bool udp_signal = false;
+
     while (true)
     {
         CheckUserInput();
@@ -1074,7 +1087,10 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     chosen_squelch = &Frequencies[i].squelch_delta_top;
                 }
 
-                if (level >= *chosen_squelch)
+                if (opt_udp_listen)
+                    udp_signal = IsThereASignal(udp_sockfd);
+
+                if (( level >= *chosen_squelch ) || udp_signal)
                 {
                     // reassure that it's a valid signal
                     // GetSignalLevel() overshoot mitigation
@@ -1086,7 +1102,9 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     {
                         usleep(350000);
                         GetSignalLevelEx(sockfd, &level, 5 );
-                        if (level < squelch)
+                        if (opt_udp_listen)
+                            udp_signal = IsThereASignal(udp_sockfd);
+                        if (( level < squelch ) || udp_signal)
                         {
                             i = indexes[j];
                             current_freq = FilterFrequency(i);
@@ -1673,15 +1691,15 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 
 
 int main(int argc, char **argv) {
-    int sockfd, portno, n;
+    int sockfd, portno, n, udp_sockfd;
     char *hostname;
     char buf[BUFSIZE];
     FILE *bookmarksfd;
 
-    opt_hostname = (char *) g_hostname;
-    opt_port     = g_portno;
-    opt_udp_listen = g_udp_listen;
-    opt_delay    = g_delay;
+    opt_hostname        = (char *) g_hostname;
+    opt_port            = g_portno;
+    opt_udp_listen_port = g_udp_listen_portno;
+    opt_delay           = g_delay;
     ParseInputOptions(argc, argv);
 
     // post validating
@@ -1712,6 +1730,11 @@ int main(int argc, char **argv) {
 
     // here min & max could be equal to 0 because the user specified -f flag
     sockfd = Connect(opt_hostname, opt_port);
+    if (opt_udp_listen)
+    {
+        printf ("UDP listening on port %d.\n", opt_port);
+        udp_sockfd = UdpConnect(opt_hostname, opt_udp_listen_port);
+    }
 
     if (!opt_tag_search) // sweep or bookmark
     {
@@ -1781,11 +1804,12 @@ int main(int argc, char **argv) {
         ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_scan_bw, opt_squelch_delta_bottom);
     }
     else {
-        ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_squelch_delta_bottom);
+        ScanBookmarkedFrequenciesInRange(sockfd, udp_sockfd, opt_min_freq, opt_max_freq, opt_squelch_delta_bottom);
     }
 
     fclose (bookmarksfd);
     close(sockfd);
+    close(udp_sockfd);
     free(Frequencies);
     return 0;
 }

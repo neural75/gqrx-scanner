@@ -45,6 +45,12 @@ void error(char *msg);
 //
 int Connect (char *hostname, int portno);
 
+// Create socket for UDP listening
+int UdpConnect (char *hostname, int portno);
+
+// check if there is a signal
+int IsThereASignal(int sockfd);
+
 //
 // Send
 //

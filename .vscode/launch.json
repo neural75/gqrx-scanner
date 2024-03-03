@@ -21,11 +21,11 @@
             "program": "${workspaceFolder}/bin/gqrx-scanner",
             "args": [
                 "-m", "bookmark",
-                "-t", "\"Moje|Add\"",
+                "-t", "\"Moje|asdf\"",
                 "-q", "a3.0",
                 "-x", "50",
-                "-a", "6.0",
-                "--verbose"
+                "--verbose",
+                "--udp_listen"
             ]
         },
         {
