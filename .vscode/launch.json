@@ -23,13 +23,13 @@
                 "-m",
                 "bookmark",
                 "-t",
-                "\"Moje|asdf\"",
+                "\"Moje|Add\"",
                 "-q",
                 "a3.0",
                 "-x",
                 "50",
                 "--verbose",
-                "--udp_listen"
+                "-u"
             ]
         },
         {
