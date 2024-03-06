@@ -1042,7 +1042,12 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd, freq_t freq_mi
     }
     printf(" done.\n");
 
-    bool udp_signal = false;
+    Signal_args_t args_to_pass = {&udp_sockfd, false};
+
+    if (opt_udp_listen){
+        pthread_t thread;
+        pthread_create(&thread, NULL, (void *)IsThereASignal, (void *)&args_to_pass);
+    }
 
     while (true)
     {
@@ -1087,10 +1092,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd, freq_t freq_mi
                     chosen_squelch = &Frequencies[i].squelch_delta_top;
                 }
 
-                if (opt_udp_listen)
-                    udp_signal = IsThereASignal(udp_sockfd);
-
-                if (( level >= *chosen_squelch ) || udp_signal)
+                if (( level >= *chosen_squelch ) || args_to_pass.signal)
                 {
                     // reassure that it's a valid signal
                     // GetSignalLevel() overshoot mitigation
@@ -1102,9 +1104,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd, freq_t freq_mi
                     {
                         usleep(350000);
                         GetSignalLevelEx(sockfd, &level, 5 );
-                        if (opt_udp_listen)
-                            udp_signal = IsThereASignal(udp_sockfd);
-                        if (( level < squelch ) || udp_signal)
+                        if (( level < squelch ))
                         {
                             i = indexes[j];
                             current_freq = FilterFrequency(i);

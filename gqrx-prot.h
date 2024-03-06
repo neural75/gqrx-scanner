@@ -49,8 +49,12 @@ int Connect (char *hostname, int portno);
 int UdpConnect (char *hostname, int portno);
 
 // check if there is a signal
-int IsThereASignal(int sockfd);
+void IsThereASignal(void * args_to_pass);
 
+typedef struct {
+    int * sockfd;
+    bool signal;
+} Signal_args_t;
 //
 // Send
 //

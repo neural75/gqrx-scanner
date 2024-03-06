@@ -47,14 +47,13 @@ SOFTWARE.
 //
 // error - wrapper for perror
 //
+
 void error(char *msg) {
     perror(msg);
     exit(0);
 }
 
-//
-// Connect
-//
+// Initiate UDP connection
 int UdpConnect (char *hostname, int portno)
 {
     int sockfd;
@@ -81,23 +80,34 @@ int UdpConnect (char *hostname, int portno)
     return sockfd;
 }
 
-// check if there is a signal
-int IsThereASignal(int sockfd)
+// check if there is a signal via UDP
+void IsThereASignal(void *args_to_pass)
 {
-    char buffer[MAX_BUF_SIZE];
     struct sockaddr_in6 client_addr;
     socklen_t client_len = sizeof(client_addr);
-    ssize_t recv_len = recvfrom(sockfd, (char *)buffer, MAX_BUF_SIZE,MSG_TRUNC,
-                                (struct sockaddr *)&client_addr, &client_len);
+    Signal_args_t* args = (Signal_args_t*)args_to_pass;
+    int sockfd = *args->sockfd;
+    char buffer[MAX_BUF_SIZE];
+    while (1) {
+        // Receive data from the socket
+        ssize_t recv_len = recvfrom(sockfd, (char *)buffer, MAX_BUF_SIZE, MSG_TRUNC,
+                                    (struct sockaddr *)&client_addr, &client_len);
+        if (recv_len < 0) {
+            perror("recvfrom failed");
+            exit(EXIT_FAILURE);
+        }
+        // Null-terminate the received data
+        buffer[MAX_BUF_SIZE - 1] = '\0';
 
-    if (recv_len < 0) {
-        perror("recvfrom failed");
-        exit(EXIT_FAILURE);
+        for (int i = 0; i < MAX_BUF_SIZE - 50; i+=100) {
+            if (buffer[i] != 0) {
+                args->signal = true;
+                break;
+            }
+            else
+                args->signal = false;
+        }
     }
-    if (buffer[1] != '\0')
-        return 1;
-
-    return 0;
 }
 
 int Connect (char *hostname, int portno)
