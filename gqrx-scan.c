@@ -1008,10 +1008,21 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd,
                    (void *)&args_to_pass);
   }
 
+  double last_frequency_cache = 0;
+
   while (true) {
     CheckUserInput();
 
     for (int i = 0; i < Frequencies_Max; i++) {
+
+      // give some time for gqrx to adjust signal level
+      if ((last_frequency_cache > Frequencies[i].noise_floor + 2.0) ||
+          (last_frequency_cache < Frequencies[i].noise_floor - 2.0))
+        usleep((skip) ? slow_scan_cycle : opt_speed);
+
+      // save it for the next iteration
+      last_frequency_cache = Frequencies[i].noise_floor;
+
       if ((current_freq = FilterFrequency(i)) == (freq_t)0)
         continue;
       if (IsBannedFreq(&current_freq))
@@ -1050,13 +1061,6 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd,
 
         if (opt_squelch_delta_top > 0) {
           chosen_squelch = &Frequencies[i].squelch_delta_top;
-        }
-
-        // If it move a bit, then slow it down and make sure if it's a signal or
-        // not
-        if (level > Frequencies[i].noise_floor + 2.0) {
-          usleep(350000);
-          GetSignalLevelEx(sockfd, &level, 5);
         }
 
         if ((level >= *chosen_squelch) || args_to_pass.signal) {
