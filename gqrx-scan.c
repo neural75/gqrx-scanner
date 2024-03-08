@@ -1008,7 +1008,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd,
                    (void *)&args_to_pass);
   }
 
-  double last_frequency_cache = 0;
+  freq_t last_frequency_cache = 0;
 
   while (true) {
     CheckUserInput();
@@ -1016,12 +1016,14 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, int udp_sockfd,
     for (int i = 0; i < Frequencies_Max; i++) {
 
       // give some time for gqrx to adjust signal level
-      if ((last_frequency_cache > Frequencies[i].noise_floor + 2.0) ||
-          (last_frequency_cache < Frequencies[i].noise_floor - 2.0))
+      signed long long diff = ((signed long long)Frequencies[i].freq -
+                               (signed long long)last_frequency_cache);
+      unsigned long long diff_abs = (diff < 0) ? -diff : diff;
+      if (diff_abs > 2000000)
         usleep((skip) ? slow_scan_cycle : opt_speed);
 
       // save it for the next iteration
-      last_frequency_cache = Frequencies[i].noise_floor;
+      last_frequency_cache = Frequencies[i].freq;
 
       if ((current_freq = FilterFrequency(i)) == (freq_t)0)
         continue;
