@@ -21,16 +21,18 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+
+#include <stdbool.h>
+
 #ifndef _GQRX_PROT_H_
 #define _GQRX_PROT_H_
 
-#define BUFSIZE         1024
-#define FREQ_MAX        4096
-#define SAVED_FREQ_MAX  1000
-#define TAG_MAX         100
+#define BUFSIZE 1024
+#define FREQ_MAX 4096
+#define SAVED_FREQ_MAX 1000
+#define TAG_MAX 100
 
 typedef unsigned long long freq_t;
-
 
 //
 // error - wrapper for perror
@@ -40,8 +42,18 @@ void error(char *msg);
 //
 // Connect
 //
-int Connect (char *hostname, int portno);
+int Connect(char *hostname, int portno);
 
+// Create socket for UDP listening
+int UdpConnect(char *hostname, int portno);
+
+// check if there is a signal
+void IsThereASignal(void *args_to_pass);
+
+typedef struct {
+  int *sockfd;
+  bool signal;
+} Signal_args_t;
 //
 // Send
 //
@@ -61,7 +73,5 @@ bool GetSignalLevel(int sockfd, double *dBFS);
 bool GetSquelchLevel(int sockfd, double *dBFS);
 bool SetSquelchLevel(int sockfd, double dBFS);
 bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp);
-
-
 
 #endif /* _GQRX_PROT_H_ */

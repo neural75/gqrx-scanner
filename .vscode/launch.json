@@ -1,40 +1,113 @@
 {
+    "version": "0.2.0",
     "configurations": [
-    {
-        "name": "(gdb) Launch",
-        "type": "cppdbg",
-        "request": "launch",
-        "program": "${workspaceFolder}/bin/Debug/gqrx-scanner",
-        "args":            [
-            //"-y", "1",
-            //"-h", "localhost", 
-            //"-p", "7356", 
-            //"--mode", "bookmark",
-            //"-f 429000000",
-            "--min", "172500000", 
-            "--max", "173600000",
-            "-v",
-            //"--tags", "\"ponti\"",                 
-            //"-d", "2"
-        ],
-        "stopAtEntry": false,
-        "cwd": "${fileDirname}",
-        "environment": [],
-        "externalConsole": false,
-        "MIMode": "gdb",
-        "setupCommands": [
-            {
-                "description": "Enable pretty-printing for gdb",
-                "text": "-enable-pretty-printing",
-                "ignoreFailures": true
-            },
-            {
-                "description": "Set Disassembly Flavor to Intel",
-                "text": "-gdb-set disassembly-flavor intel",
-                "ignoreFailures": true
-            }
-        ]
-    }
+        {
+            "type": "c",
+            "request": "launch",
+            "name": "scan test bookmark",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "setupCommands": [
+                {
+                    "description": "Pretty print gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "env": [],
+            "cwd": "${workspaceFolder}/bin/",
+            "program": "${workspaceFolder}/bin/gqrx-scanner",
+            "args": [
+                "-m",
+                "bookmark",
+                "-t",
+                "\"Moje|Add\"",
+                "-q",
+                "a3.0",
+                "-x",
+                "50",
+                "--verbose",
+                "-u"
+            ]
+        },
+        {
+            "type": "c",
+            "request": "launch",
+            "name": "scan test sweep",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "setupCommands": [
+                {
+                    "description": "Pretty print gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "env": [],
+            "cwd": "${workspaceFolder}/bin/",
+            "program": "${workspaceFolder}/bin/gqrx-scanner",
+            "args": [
+                "-m",
+                "sweep",
+                "-q",
+                "a3.0",
+                "-a",
+                "6.0",
+                "-s",
+                "12500",
+                "-b",
+                "144000000",
+                "-e",
+                "146000000",
+                "--verbose"
+            ]
+        },
+        {
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bin/Debug/gqrx-scanner",
+            "args": [
+                "-y",
+                "1",
+                "-h",
+                "localhost",
+                "-p",
+                "7356",
+                "--mode",
+                "bookmark",
+                "-f 429000000",
+                "--min",
+                "172500000",
+                "--max",
+                "173600000",
+                "-v",
+                "--tags",
+                "\"ponti\"",
+                "-d",
+                "2"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
+        }
     ]
- 
 }
