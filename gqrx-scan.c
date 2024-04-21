@@ -227,6 +227,7 @@ void print_usage(char *name) {
   printf("-u, --udp_listen             Experimental: Trigger listening on UDP "
          "audio signal.\n");
   printf("                             Make sure that UDP button is pushed.\n");
+  printf("                             for gqrx>=2.17.5\n");
   printf("-t, --tags <\"tags\">        Filter signals. Match only on "
          "frequencies marked with a tag found in \"tags\"\n");
   printf("                             \"tags\" is a quoted string with a '|' "
