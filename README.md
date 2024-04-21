@@ -67,6 +67,8 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
                              It will determine squelch delta based on noise floor and
                              <dB> value will determine how far squelch delta will be placed from it.
                              Ex.: a0.5
+-a, --squelch_delta_top <dB> It maps squelch levels for an each scanned frequency
+                             based on noise floor + provided value.
 -t, --tags <"tags">          Filter signals. Match only on frequencies marked with a tag found in "tags"
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
                                tags are case insensitive and match also for partial string contained in a tag
