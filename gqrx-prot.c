@@ -42,7 +42,8 @@ SOFTWARE.
 #include "gqrx-prot.h"
 #include <math.h>
 
-#define MAX_BUF_SIZE 1472
+#define MAX_BUF_SIZE 1024
+// #define MAX_BUF_SIZE 1472
 //
 // error - wrapper for perror
 //
