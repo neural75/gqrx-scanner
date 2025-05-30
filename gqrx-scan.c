@@ -984,6 +984,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     GetSignalLevelEx(sockfd, &level, 5 );
                     if (level >= squelch)
                     {
+                        StartRecording(sockfd);
                         time_t hit_time = GetTime(timestamp);
                         if (opt_squelch_delta_auto_enable)
                         {
@@ -1002,6 +1003,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
+                        StopRecording(sockfd);
                         printf (" [elapsed time %s]\n", timestamp);
                         if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
                         fflush(stdout);
@@ -1365,7 +1367,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
     int  success_counter    = 0;  // number of correctly acquired signals, reset on bad signals or reaching success_factor
     int  success_factor     = 5; // improving sleep cycle every success_factor of times
 
-    while (true)
+    while (current_freq <= freq_max)
     {
         for ( size_t i = 0 ; i < freqeuencies_count; i++)
         {
@@ -1449,6 +1451,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 else
                 {
                     SaveFreq(current_freq);
+                    StartRecording(sockfd); // Add here - after confirming valid signal
                     if (opt_squelch_delta_auto_enable){
                         squelch_backup = squelch;
                         SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
@@ -1471,6 +1474,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     // Wait user input or delay time after signal lost
                     skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                     time_t elapsed = DiffTime(timestamp, hit_time);
+                    StopRecording(sockfd); // Add here - before moving to next frequency
                     printf (" [elapsed time %s]\n", timestamp);
                     fflush(stdout);
                     if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
@@ -1536,6 +1540,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             sweep_count++;
         }
     }
+    return true;
 }
 
 
