@@ -163,7 +163,7 @@ void print_usage ( char *name )
     printf ("\t\t[-l|--max-listen <maximum listening time in milliseconds>]\n");
     printf ("\t\t[-t|--tags <\"tag1|tag2|...\">]\n");
     printf ("\t\t[-v|--verbose]\n");
-    printf ("\t\t[-r|--record] (enables recording of found signals)\n");
+    printf ("\t\t[-r|--record]\n");
     printf ("\n");
     printf ("-h, --host <host>            Name of the host to connect. Default: localhost\n");
     printf ("-p, --port <port>            The number of the port to connect. Default: 7356\n");
@@ -193,6 +193,7 @@ void print_usage ( char *name )
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
     printf ("                               Works only with -m bookmark scan mode\n");
+    printf ("-r, --record                  Enable recording of detected signals\n");
     //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");
