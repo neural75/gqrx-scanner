@@ -59,7 +59,6 @@ int Connect (char *hostname, int portno)
     struct sockaddr_in serveraddr;
     struct hostent *server;
 
-
     /* socket: create the socket */
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0)
@@ -214,5 +213,39 @@ bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp)
         usleep(1000);
     }
     *dBFS = *dBFS / (n_samp - errors);
+    return true;
+}
+
+//
+// StartRecording
+// Start recording audio stream to a file
+//
+bool StartRecording(int sockfd)
+{
+    char buf[BUFSIZE];
+
+    Send(sockfd, "U RECORD 1\n");
+    Recv(sockfd, buf);
+
+    if (strcmp(buf, "RPRT 1") == 0 )
+        return false;
+
+    return true;
+}
+
+//
+// StopRecording
+// Stop recording audio stream
+//
+bool StopRecording(int sockfd)
+{
+    char buf[BUFSIZE];
+
+    Send(sockfd, "U RECORD 0\n");
+    Recv(sockfd, buf);
+
+    if (strcmp(buf, "RPRT 1") == 0 )
+        return false;
+
     return true;
 }
