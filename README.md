@@ -39,7 +39,7 @@ I have found better result with high fft size (64536) and 17 fps refresh rate, b
 ## Command line Options
 ```
 Usage:
-./gqrx-scanner
+gqrx-scanner
 		[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
 		[-d|--delay <lingering time in milliseconds>]
