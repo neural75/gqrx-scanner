@@ -1380,7 +1380,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
     int  success_counter    = 0;  // number of correctly acquired signals, reset on bad signals or reaching success_factor
     int  success_factor     = 5; // improving sleep cycle every success_factor of times
 
-    while (current_freq <= freq_max)
+    while (true)
     {
         for ( size_t i = 0 ; i < freqeuencies_count; i++)
         {
