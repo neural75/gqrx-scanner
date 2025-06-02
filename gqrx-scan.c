@@ -136,7 +136,7 @@ char           *opt_tags[TAG_MAX] = {0};
 int             opt_tag_max = 0;
 bool            opt_disable_store = false;
 long            opt_max_listen = 0;
-bool            opt_record_enabled = false;
+bool            opt_record = false;
 // only for debug
 bool            opt_verbose = false;
 
@@ -499,7 +499,7 @@ bool ParseInputOptions (int argc, char **argv)
                 }
                 break;
             case 'r':
-                opt_record_enabled = true;
+                opt_record = true;
                 break;
             case '?':
             /* getopt_long already printed an error message. */
@@ -991,7 +991,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     GetSignalLevelEx(sockfd, &level, 5 );
                     if (level >= squelch)
                     {
-                        if (opt_record_enabled)
+                        if (opt_record)
                         {
                             StartRecording(sockfd);
                         }
@@ -1013,7 +1013,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
-                        if (opt_record_enabled)
+                        if (opt_record)
                         {
                             StopRecording(sockfd);
                         }
@@ -1464,7 +1464,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 else
                 {
                     SaveFreq(current_freq);
-                    if (opt_record_enabled)
+                    if (opt_record)
                     {
                         StartRecording(sockfd);
                     }
@@ -1490,7 +1490,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     // Wait user input or delay time after signal lost
                     skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                     time_t elapsed = DiffTime(timestamp, hit_time);
-                    if (opt_record_enabled)
+                    if (opt_record)
                     {
                         StopRecording(sockfd);
                     }
