@@ -20,6 +20,7 @@ In sweep mode the scan of the band is performed fast (well, as fast as it can), 
 * Multiple Tag based search in bookmark scan mode ("Tag1|Tag2|TagX").
 * Automatic Frequency Locking in sweep scan mode
 * Interactive monitor to skip, ban or pause a frequency manually
+* Automatic recording of detected signals
 
 ## Pre-requisites
 Gqrx Remote Protocol must be enabled: Tools->Remote Control. See [this](http://gqrx.dk/doc/remote-control).
@@ -38,11 +39,14 @@ I have found better result with high fft size (64536) and 17 fps refresh rate, b
 ## Command line Options
 ```
 Usage:
-gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
+./gqrx-scanner
+		[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
 		[-d|--delay <lingering time in milliseconds>]
+		[-l|--max-listen <maximum listening time in milliseconds>]
 		[-t|--tags <"tag1|tag2|...">]
 		[-v|--verbose]
+		[-r|--record]
 
 -h, --host <host>            Name of the host to connect. Default: localhost
 -p, --port <port>            The number of the port to connect. Default: 7356
@@ -50,20 +54,21 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
                                Possible values for <mode>: sweep, bookmark
 -f, --freq <freq>            Frequency to scan with a range of +- 1MHz.
                                Default: the current frequency tuned in Gqrx Incompatible with -b, -e
--s, --step <freq>            Frequency step <freq> in Hz. Default: 10000
 -b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f
 -e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
+-s, --step <freq>            Frequency step <freq> in Hz. Default: 10000
 -d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000
--l, --max-listen <time>      Maximum time to listen to a frequency, active or otherwise. Default 0, no maximum time
+-l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0, no maximum
 -x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.
                                If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed
 -y  --date                   Date Format, default is 0.
                                0 = mm-dd-yy
                                1 = dd-mm-yy
--q, --squelch_delta <dB>     If set creates bottom squelch just
-                             for listening. It may reduce unnecessary squelch audio supress.
+-q, --squelch_delta <dB>|a<dB> If set creates bottom squelch just for listening.
+                             It may reduce unnecessary squelch audio supress.
                              Default: 0.0
-                             Place \"a\" switch before <dB> value to turn into auto mode.
+                             Ex.: 6.5
+                             Place "a" switch before <dB> value to turn into auto mode
                              It will determine squelch delta based on noise floor and
                              <dB> value will determine how far squelch delta will be placed from it.
                              Ex.: a0.5
@@ -71,6 +76,7 @@ gqrx-scanner	[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
                                "tags" is a quoted string with a '|' list separator: Ex: "Tag1|Tag2"
                                tags are case insensitive and match also for partial string contained in a tag
                                Works only with -m bookmark scan mode
+-r, --record                 Enable recording of detected signals
 -v, --verbose                Output more information during scan (used for debug). Default: false
 --help                       This help message.
 
@@ -153,6 +159,4 @@ sudo make uninstall
 
 ## TODOs
 * set modulation in bookmark search
-* automatic audio recording on signal detection
 * parsable output in csv?
-
