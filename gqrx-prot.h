@@ -61,7 +61,7 @@ bool GetSignalLevel(int sockfd, double *dBFS);
 bool GetSquelchLevel(int sockfd, double *dBFS);
 bool SetSquelchLevel(int sockfd, double dBFS);
 bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp);
-
-
+bool StartRecording(int sockfd);
+bool StopRecording(int sockfd);
 
 #endif /* _GQRX_PROT_H_ */

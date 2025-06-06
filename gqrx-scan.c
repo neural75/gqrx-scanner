@@ -136,6 +136,7 @@ char           *opt_tags[TAG_MAX] = {0};
 int             opt_tag_max = 0;
 bool            opt_disable_store = false;
 long            opt_max_listen = 0;
+bool            opt_record = false;
 // only for debug
 bool            opt_verbose = false;
 
@@ -162,6 +163,7 @@ void print_usage ( char *name )
     printf ("\t\t[-l|--max-listen <maximum listening time in milliseconds>]\n");
     printf ("\t\t[-t|--tags <\"tag1|tag2|...\">]\n");
     printf ("\t\t[-v|--verbose]\n");
+    printf ("\t\t[-r|--record]\n");
     printf ("\n");
     printf ("-h, --host <host>            Name of the host to connect. Default: localhost\n");
     printf ("-p, --port <port>            The number of the port to connect. Default: 7356\n");
@@ -191,6 +193,7 @@ void print_usage ( char *name )
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
     printf ("                               Works only with -m bookmark scan mode\n");
+    printf ("-r, --record                  Enable recording of detected signals\n");
     //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");
@@ -261,12 +264,13 @@ bool ParseInputOptions (int argc, char **argv)
           {"date",    required_argument, 0, 'y'},
           {"squelch_delta",    required_argument, 0, 'q'},
           {"max-listen",       required_argument, 0, 'l'},
+          {"record", no_argument, 0, 'r'},
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:q:l:",
+        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:q:l:r",
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -493,6 +497,9 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid frequency step\n", c);
                     print_usage(argv[0]);
                 }
+                break;
+            case 'r':
+                opt_record = true;
                 break;
             case '?':
             /* getopt_long already printed an error message. */
@@ -984,6 +991,10 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     GetSignalLevelEx(sockfd, &level, 5 );
                     if (level >= squelch)
                     {
+                        if (opt_record)
+                        {
+                            StartRecording(sockfd);
+                        }
                         time_t hit_time = GetTime(timestamp);
                         if (opt_squelch_delta_auto_enable)
                         {
@@ -1002,6 +1013,10 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
+                        if (opt_record)
+                        {
+                            StopRecording(sockfd);
+                        }
                         printf (" [elapsed time %s]\n", timestamp);
                         if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
                         fflush(stdout);
@@ -1449,6 +1464,10 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 else
                 {
                     SaveFreq(current_freq);
+                    if (opt_record)
+                    {
+                        StartRecording(sockfd);
+                    }
                     if (opt_squelch_delta_auto_enable){
                         squelch_backup = squelch;
                         SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
@@ -1471,6 +1490,10 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     // Wait user input or delay time after signal lost
                     skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                     time_t elapsed = DiffTime(timestamp, hit_time);
+                    if (opt_record)
+                    {
+                        StopRecording(sockfd);
+                    }
                     printf (" [elapsed time %s]\n", timestamp);
                     fflush(stdout);
                     if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
@@ -1536,6 +1559,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             sweep_count++;
         }
     }
+    return true;
 }
 
 
