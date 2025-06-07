@@ -27,11 +27,8 @@ SOFTWARE.
  * gqrx-scanner
  * A simple frequency scanner for gqrx
  *
- * usage: gqrx-scanner [-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
- *                  [-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
- *                  [-d|--delay <lingering time on signals>]
- *                  [-t|--tags <"tag1|tag2|...">]
- *                  [-x|--disable-sweep-store] [-s <min_hit_to_remember>] [-m <max_miss_to_forget>]
+ * usage: see print_usage()
+ *       
  */
 #define _GNU_SOURCE // strcasestr
 #include <stdio.h>
@@ -111,11 +108,8 @@ const int       g_portno            = 7356;
 const freq_t    g_freq_delta        = 1000000; // +- 1Mhz default bandwidth to scan from tuned freq.
 const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (10Khz)
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
-const long      g_delay             = 2500000; // 2 sec //LWVMOBILE: Doesn't this default value equal 20 seconds? Changing to a lower number. Was 2000000000
-//LWVMOBILE: Above variable was set WAY too high, it wasn't 2 seconds, but 2000 seconds.
+const long      g_delay             = 2500000; // 2.5 sec in microseconds
 const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
-//LWVMOBILE: Insert new constants here for scan speed and date format?? Or just use variable with speed set already
-
 //
 // Input options
 //
@@ -134,7 +128,6 @@ SCAN_MODE       opt_scan_mode = sweep;
 bool            opt_tag_search = false;
 char           *opt_tags[TAG_MAX] = {0};
 int             opt_tag_max = 0;
-bool            opt_disable_store = false;
 long            opt_max_listen = 0;
 bool            opt_record = false;
 // only for debug
@@ -194,7 +187,6 @@ void print_usage ( char *name )
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
     printf ("                               Works only with -m bookmark scan mode\n");
     printf ("-r, --record                  Enable recording of detected signals\n");
-    //printf ("\t\t[-x|--disable-sweep-store] [-s <min hit>] [-m <max miss>]
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");
     printf ("\n");
@@ -608,9 +600,6 @@ time_t GetTime(char *timestamp)
     return etime;
 }
 
-//LWVMOBILE: It is very tempting to lop off part of this function, how many TX lasts more than a few seconds or minutes??
-//LWVMOBILE: Will still need to rework eventually, this will cause any time greater than 60 minutes to roll over back to 0 I believe
-//neural: Why bother? if there are transmissions lasting more than 1 hour or 1 day, the string should be consistent with the long duration.
 // Calculate difference in time in [dd days][hh:][mm:][ss secs]
 time_t DiffTime(char *timestamp, time_t start_time)
 {
