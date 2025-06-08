@@ -1614,6 +1614,11 @@ int main(int argc, char **argv) {
 
     if (opt_scan_mode == sweep)
     {
+        // FIXME: Neural: this is a sweep scan and should not use the Frequencies array structure designed for bookmarks (just to save a "noise_floor" value)!
+        //        what if the range is big and the bw is small?  It will allocate a lot of memory for nothing
+        //        The noise_floor level could have been calculated on the fly with a moving average on the spectrum and not per single frequency.
+        //        Infact, it is not a noise floor but the signal level at the current frequency below the squelch, integrated by previous runs.
+        //        It is also an overkill to change the squelch level dinamically (a frigging user option on gqrx): the user should set it manually of whatever value he/she wants to avoid false positives, lowering it if neccessary.
         size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
         Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
     }
