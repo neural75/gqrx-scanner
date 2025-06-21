@@ -869,13 +869,15 @@ bool LoadFrequencies (FILE *bookmarksfd)
         if (start)
         {
             char * token = strtok(line, "; "); // freq
-            sscanf(token, "%llu", &Frequencies[i].freq);
-            token = strtok(NULL, ";"); // descr
+            if ((token == NULL) || (sscanf(token, "%llu", &Frequencies[i].freq) < 0))
+              continue; // skip empty lines
+            if ((token = strtok(NULL, ";")) == NULL) // descr
+              continue; // skip invalid lines
             strncpy(Frequencies[i].descr, token , BUFSIZE);
             token = strtok(NULL, ";"); // mode
             token = strtok(NULL, ";"); // bw
             token = strtok(NULL, ";"); // tags, comma separated
-
+            if (token == NULL) continue; // skip invalid lines
             char * tag = strtok(token,",\n");
             int k = 0;
             while (tag != NULL && k < TAG_MAX)
@@ -891,8 +893,13 @@ bool LoadFrequencies (FILE *bookmarksfd)
                 tag = strtok (NULL, ",\n");
             }
             Frequencies[i].tag_max = k;
-            //printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr);
+            printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr); //$$$
             i++;
+            if (i >= FREQ_MAX)
+            {
+                printf("Warning: Too many frequencies in bookmarks file, max %d\n", FREQ_MAX);
+                break;
+            }
         }
     }
     Frequencies_Max = i;
