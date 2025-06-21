@@ -893,7 +893,7 @@ bool LoadFrequencies (FILE *bookmarksfd)
                 tag = strtok (NULL, ",\n");
             }
             Frequencies[i].tag_max = k;
-            printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr); //$$$
+            //printf(":%llu: %s\n", Frequencies[i].freq, Frequencies[i].descr); //$$$
             i++;
             if (i >= FREQ_MAX)
             {
