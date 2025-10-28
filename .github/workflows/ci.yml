@@ -89,5 +89,5 @@ jobs:
       
     - name: Verify binary exists
       run: |
-        ls -lh bin/*/gqrx-scanner
+        ls -lh bin/gqrx-scanner
         echo "Build successful without cmocka dependency"
