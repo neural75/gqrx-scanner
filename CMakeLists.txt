@@ -21,3 +21,13 @@ if(NOT TARGET uninstall)
     add_custom_target(uninstall
         COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 endif()
+
+# Make testing optional - only enable if cmocka is available
+find_package(cmocka QUIET)
+if(cmocka_FOUND)
+    enable_testing()
+    add_subdirectory(tests)
+    message(STATUS "cmocka found - tests enabled. Run 'make test' or 'ctest' to run tests.")
+else()
+    message(STATUS "cmocka not found - tests disabled. Install libcmocka-dev to enable testing.")
+endif()
