@@ -134,11 +134,45 @@ Frequency range set from 429.000 MHz to 431.000 MHz.
 ```
 
 ## Build and Install
+
 ```
 cmake .
 make
 sudo make install
 ```
+
+### Building and Running Tests
+
+The test suite requires the cmocka testing framework. Install it first:
+
+**Ubuntu/Debian:**
+```
+sudo apt-get install libcmocka-dev
+```
+
+**Fedora/RHEL:**
+```
+sudo dnf install libcmocka-devel
+```
+
+**macOS (via Homebrew):**
+```
+brew install cmocka
+```
+
+Once cmocka is installed, build and run tests:
+```
+cmake .
+make
+ctest
+```
+
+For verbose test output:
+```
+ctest --verbose
+```
+
+**Note:** If cmocka is not installed, the build will proceed normally but tests will be disabled. You'll see a message: "cmocka not found - tests disabled."
 
 ## To build for Mac-OSX
 

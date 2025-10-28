@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2017 neural75
+Copyright (c) 2025 neural75
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -868,7 +868,7 @@ bool LoadFrequencies (FILE *bookmarksfd)
 
         if (start)
         {
-            char * token = strtok(line, "; "); // freq
+            char * token = strtok(line, ";"); // freq
             if ((token == NULL) || (sscanf(token, "%llu", &Frequencies[i].freq) < 0))
               continue; // skip empty lines
             if ((token = strtok(NULL, ";")) == NULL) // descr
@@ -1035,10 +1035,10 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
 bool SaveFreq(freq_t freq_current)
 {
     bool found = false;
-    freq_t tollerance = 5000; // 10Khz bwd
+    freq_t tollerance = 5000; // 5Khz tolerance (±5 KHz)
 
     int  temp_count = 0;
-    freq_t delta, temp_delta = tollerance;
+    freq_t temp_delta = tollerance;
     int  temp_i     = 0;
 
     for (int i = 0; i < SavedFreq_Max; i++)
@@ -1048,7 +1048,13 @@ bool SaveFreq(freq_t freq_current)
             freq_current <  (SavedFrequencies[i].freq + tollerance)   )
         {
             // found match, loop for minimum delta
-            delta = freq_current - SavedFrequencies[i].freq;
+            // Use absolute value to handle both positive and negative differences
+            freq_t delta;
+            if (freq_current >= SavedFrequencies[i].freq)
+                delta = freq_current - SavedFrequencies[i].freq;
+            else
+                delta = SavedFrequencies[i].freq - freq_current;
+            
             if ( delta < temp_delta )
             {
                 // Found a better match
@@ -1559,6 +1565,7 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 }
 
 
+#ifndef TESTING_BUILD
 int main(int argc, char **argv) {
     int sockfd, portno, n;
     char *hostname;
@@ -1682,3 +1689,4 @@ int main(int argc, char **argv) {
     free(Frequencies);
     return 0;
 }
+#endif /* TESTING_BUILD */

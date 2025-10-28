@@ -1,0 +1,12 @@
+# Tag name          ; Color
+DMR                 ; #c0c0c0
+VHF                 ; #ff0000
+Radio Links         ; #00ff00
+
+# Frequency ; Name                     ; Modulation          ; Bandwidth ; Tags
+430037000   ; Beigua                   ; Narrow FM           ; 12500     ; DMR, VHF
+430288000   ; ponte dmr                ; Narrow FM           ; 12500     ; DMR
+430887000   ; DMR                      ; Narrow FM           ; 12500     ; DMR
+430900000   ; Genova DMR               ; Narrow FM           ; 12500     ; DMR, Radio Links
+144500000   ; Local Repeater           ; Narrow FM           ; 12500     ; VHF
+145000000   ; Another Station          ; Narrow FM           ; 12500     ; VHF
