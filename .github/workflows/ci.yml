@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test-ubuntu:
+    name: Build and Test (Ubuntu)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcmocka-dev cmake build-essential
+        
+    - name: Configure CMake
+      run: cmake .
+      
+    - name: Build
+      run: make
+      
+    - name: Run tests
+      run: ctest --output-on-failure --verbose
+      
+    - name: Display test results
+      if: always()
+      run: |
+        echo "Test suite completed"
+        if [ -f Testing/Temporary/LastTest.log ]; then
+          cat Testing/Temporary/LastTest.log
+        fi
+
+  build-and-test-macos:
+    name: Build and Test (macOS)
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        brew install cmocka cmake
+        
+    - name: Configure CMake (macOS)
+      run: |
+        cmake . -DCMAKE_C_FLAGS="-DOSX"
+        
+    - name: Build
+      run: make
+      
+    - name: Run tests
+      run: ctest --output-on-failure --verbose
+      
+    - name: Display test results
+      if: always()
+      run: |
+        echo "Test suite completed"
+        if [ -f Testing/Temporary/LastTest.log ]; then
+          cat Testing/Temporary/LastTest.log
+        fi
+
+  build-without-tests:
+    name: Build without cmocka (Ubuntu)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install build essentials only
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential
+        
+    - name: Configure CMake
+      run: cmake .
+      
+    - name: Build
+      run: make
+      
+    - name: Verify binary exists
+      run: |
+        ls -lh bin/*/gqrx-scanner
+        echo "Build successful without cmocka dependency"
