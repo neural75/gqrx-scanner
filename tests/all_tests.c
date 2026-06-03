@@ -31,7 +31,9 @@ SOFTWARE.
 #include <stdlib.h>
 
 #include "../gqrx-prot.h"
+#ifdef HAVE_WRAP_SOCKET_MOCKS
 #include "mock_socket.h"
+#endif
 
 /* FREQ type definition from gqrx-scan.c */
 typedef struct {
@@ -486,6 +488,8 @@ static void test_clear_all_bans(void **state)
     assert_int_equal(BannedFreq_Max, 0);
 }
 
+#ifdef HAVE_WRAP_SOCKET_MOCKS
+
 /* ========================================================================
  * Protocol Tests (socket mocking via __wrap_write / __wrap_read)
  * ======================================================================== */
@@ -692,6 +696,8 @@ static void test_connect_custom_host_port(void **state)
     assert_int_equal(mock_socket_get_actual_port(), 9999);
 }
 
+#endif /* HAVE_WRAP_SOCKET_MOCKS */
+
 /* ========================================================================
  * Test Runner - All Tests Combined
  * ======================================================================== */
@@ -730,6 +736,7 @@ int main(void)
         cmocka_unit_test(test_is_banned_freq),
         cmocka_unit_test(test_clear_all_bans),
 
+#ifdef HAVE_WRAP_SOCKET_MOCKS
         /* Protocol tests */
         cmocka_unit_test(test_send),
         cmocka_unit_test(test_recv),
@@ -749,6 +756,7 @@ int main(void)
         /* Connect tests */
         cmocka_unit_test(test_connect_localhost),
         cmocka_unit_test(test_connect_custom_host_port),
+#endif
     };
     
     return cmocka_run_group_tests(tests, NULL, NULL);
