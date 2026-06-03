@@ -126,7 +126,6 @@ long            opt_date = 0;
 //LWVMOBILE; End new variables.
 SCAN_MODE       opt_scan_mode = sweep;
 bool            opt_tag_search = false;
-extern freq_t   FilterFrequency (int idx);
 char           *opt_tags[TAG_MAX] = {0};
 int             opt_tag_max = 0;
 long            opt_max_listen = 0;
