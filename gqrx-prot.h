@@ -22,6 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #ifndef _GQRX_PROT_H_
+#include <stdbool.h>
+
 #define _GQRX_PROT_H_
 
 #define BUFSIZE         1024

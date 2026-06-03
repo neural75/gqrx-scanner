@@ -31,6 +31,7 @@ SOFTWARE.
 #include <stdlib.h>
 
 #include "../gqrx-prot.h"
+#include "mock_socket.h"
 
 /* FREQ type definition from gqrx-scan.c */
 typedef struct {
@@ -486,6 +487,212 @@ static void test_clear_all_bans(void **state)
 }
 
 /* ========================================================================
+ * Protocol Tests (socket mocking via __wrap_write / __wrap_read)
+ * ======================================================================== */
+
+static void test_send(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+
+    char cmd[] = "f\n";
+    bool result = Send(MOCK_SOCKFD, cmd);
+
+    assert_true(result);
+    assert_string_equal(mock_socket_get_last_command(), "f\n");
+}
+
+static void test_recv(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("145000000\n");
+
+    char buf[BUFSIZE] = {0};
+    bool result = Recv(MOCK_SOCKFD, buf);
+
+    assert_true(result);
+    assert_string_equal(buf, "145000000\n");
+}
+
+static void test_get_current_freq_success(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("145000000\n");
+
+    freq_t freq = 0;
+    bool result = GetCurrentFreq(MOCK_SOCKFD, &freq);
+
+    assert_true(result);
+    assert_int_equal(freq, 145000000);
+    assert_string_equal(mock_socket_get_last_command(), "f\n");
+}
+
+static void test_get_current_freq_rprt1(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("RPRT 1\n");
+
+    freq_t freq = 0;
+    bool result = GetCurrentFreq(MOCK_SOCKFD, &freq);
+
+    assert_false(result);
+}
+
+static void test_get_signal_level_success(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("-12.5\n");
+
+    double dBFS = 0.0;
+    bool result = GetSignalLevel(MOCK_SOCKFD, &dBFS);
+
+    assert_true(result);
+    assert_true(dBFS > -12.51 && dBFS < -12.49);
+    assert_string_equal(mock_socket_get_last_command(), "l\n");
+}
+
+static void test_get_signal_level_zero(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("0.0\n");
+
+    double dBFS = -10.0;
+    bool result = GetSignalLevel(MOCK_SOCKFD, &dBFS);
+
+    assert_false(result);
+}
+
+static void test_get_signal_level_rprt1(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("RPRT 1\n");
+
+    double dBFS = 0.0;
+    bool result = GetSignalLevel(MOCK_SOCKFD, &dBFS);
+
+    assert_false(result);
+}
+
+static void test_get_squelch_level(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("-80.0\n");
+
+    double dBFS = 0.0;
+    bool result = GetSquelchLevel(MOCK_SOCKFD, &dBFS);
+
+    assert_true(result);
+    assert_true(dBFS > -80.01 && dBFS < -79.99);
+    assert_string_equal(mock_socket_get_last_command(), "l SQL\n");
+}
+
+static void test_set_squelch_level(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("RPRT 0\n");
+
+    bool result = SetSquelchLevel(MOCK_SOCKFD, -80.0);
+
+    assert_true(result);
+}
+
+static void test_set_squelch_level_rprt1(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("RPRT 1\n");
+
+    bool result = SetSquelchLevel(MOCK_SOCKFD, -80.0);
+
+    assert_false(result);
+}
+
+static void test_start_recording(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("RPRT 0\n");
+
+    bool result = StartRecording(MOCK_SOCKFD);
+
+    assert_true(result);
+    assert_string_equal(mock_socket_get_last_command(), "U RECORD 1\n");
+}
+
+static void test_stop_recording(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    mock_socket_set_response("RPRT 0\n");
+
+    bool result = StopRecording(MOCK_SOCKFD);
+
+    assert_true(result);
+    assert_string_equal(mock_socket_get_last_command(), "U RECORD 0\n");
+}
+
+static void test_set_freq_success(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    /* SetFreq: send "F %llu\n", Recv (RPRT check), then loop GetCurrentFreq */
+    mock_socket_set_response("RPRT 0\n");
+    mock_socket_add_response("145000000\n");
+
+    bool result = SetFreq(MOCK_SOCKFD, 145000000);
+
+    assert_true(result);
+    assert_string_equal(mock_socket_get_last_command(), "f\n");
+}
+
+static void test_set_freq_retry_limit(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+    /* Simulate Gqrx accepting the freq set command but GetCurrentFreq
+       keeps returning RPRT 1 — should give up after 10 retries */
+    mock_socket_set_response("RPRT 0\n");
+    for (int i = 0; i < 10; i++)
+        mock_socket_add_response("RPRT 1\n");
+
+    bool result = SetFreq(MOCK_SOCKFD, 145000000);
+
+    assert_false(result);
+}
+
+static void test_connect_localhost(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+
+    int fd = Connect("localhost", 7356);
+
+    assert_int_equal(fd, MOCK_SOCKFD);
+    assert_string_equal(mock_socket_get_actual_host(), "localhost");
+    assert_int_equal(mock_socket_get_actual_port(), 7356);
+}
+
+static void test_connect_custom_host_port(void **state)
+{
+    (void) state;
+    mock_socket_reset();
+
+    int fd = Connect("myremote", 9999);
+
+    assert_int_equal(fd, MOCK_SOCKFD);
+    assert_string_equal(mock_socket_get_actual_host(), "myremote");
+    assert_int_equal(mock_socket_get_actual_port(), 9999);
+}
+
+/* ========================================================================
  * Test Runner - All Tests Combined
  * ======================================================================== */
 
@@ -522,6 +729,26 @@ int main(void)
         cmocka_unit_test(test_ban_freq),
         cmocka_unit_test(test_is_banned_freq),
         cmocka_unit_test(test_clear_all_bans),
+
+        /* Protocol tests */
+        cmocka_unit_test(test_send),
+        cmocka_unit_test(test_recv),
+        cmocka_unit_test(test_get_current_freq_success),
+        cmocka_unit_test(test_get_current_freq_rprt1),
+        cmocka_unit_test(test_get_signal_level_success),
+        cmocka_unit_test(test_get_signal_level_zero),
+        cmocka_unit_test(test_get_signal_level_rprt1),
+        cmocka_unit_test(test_get_squelch_level),
+        cmocka_unit_test(test_set_squelch_level),
+        cmocka_unit_test(test_set_squelch_level_rprt1),
+        cmocka_unit_test(test_start_recording),
+        cmocka_unit_test(test_stop_recording),
+        cmocka_unit_test(test_set_freq_success),
+        cmocka_unit_test(test_set_freq_retry_limit),
+
+        /* Connect tests */
+        cmocka_unit_test(test_connect_localhost),
+        cmocka_unit_test(test_connect_custom_host_port),
     };
     
     return cmocka_run_group_tests(tests, NULL, NULL);

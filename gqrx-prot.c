@@ -47,7 +47,7 @@ SOFTWARE.
 //
 void error(char *msg) {
     perror(msg);
-    exit(0);
+    exit(1);
 }
 
 //
@@ -68,14 +68,14 @@ int Connect (char *hostname, int portno)
     server = gethostbyname(hostname);
     if (server == NULL) {
         fprintf(stderr,"ERROR, no such host as %s\n", hostname);
-        exit(0);
+        exit(1);
     }
 
     /* build the server's Internet address */
-    bzero((char *) &serveraddr, sizeof(serveraddr));
+    memset(&serveraddr, 0, sizeof(serveraddr));
     serveraddr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr_list[0],
-	  (char *)&serveraddr.sin_addr.s_addr, server->h_length);
+    memcpy(&serveraddr.sin_addr.s_addr, server->h_addr_list[0],
+	   server->h_length);
     serveraddr.sin_port = htons(portno);
 
     /* connect: create a connection with the server */
@@ -104,7 +104,7 @@ bool Recv(int sockfd, char *buf)
 {
     int n;
 
-    n = read(sockfd, buf, BUFSIZE);
+    n = read(sockfd, buf, BUFSIZE - 1);
     if (n < 0)
       error("ERROR reading from socket");
     buf[n]= '\0';
@@ -122,7 +122,7 @@ bool GetCurrentFreq(int sockfd, freq_t *freq)
     Send(sockfd, "f\n");
     Recv(sockfd, buf);
 
-    if (strcmp(buf, "RPRT 1") == 0 )
+    if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
 
     sscanf(buf, "%llu", freq);
@@ -136,16 +136,24 @@ bool SetFreq(int sockfd, freq_t freq)
     Send(sockfd, buf);
     Recv(sockfd, buf);
 
-    if (strcmp(buf, "RPRT 1") == 0 )
+    if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
 
     freq_t freq_current = 0;
-    do
+    int error_retries = 10;
+    while (1)
     {
-        GetCurrentFreq(sockfd, &freq_current);
-    } while (freq_current != freq);
-
-    return true;
+        if (!GetCurrentFreq(sockfd, &freq_current))
+        {
+            if (--error_retries <= 0)
+                return false;
+            usleep(1000);
+            continue;
+        }
+        if (freq_current == freq)
+            return true;
+        usleep(1000);
+    }
 }
 
 bool GetSignalLevel(int sockfd, double *dBFS)
@@ -155,7 +163,7 @@ bool GetSignalLevel(int sockfd, double *dBFS)
     Send(sockfd, "l\n");
     Recv(sockfd, buf);
 
-    if (strcmp(buf, "RPRT 1") == 0 )
+    if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
 
     sscanf(buf, "%lf", dBFS);
@@ -173,7 +181,7 @@ bool GetSquelchLevel(int sockfd, double *dBFS)
     Send(sockfd, "l SQL\n");
     Recv(sockfd, buf);
 
-    if (strcmp(buf, "RPRT 1") == 0 )
+    if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
 
     sscanf(buf, "%lf", dBFS);
@@ -190,7 +198,7 @@ bool SetSquelchLevel(int sockfd, double dBFS)
     Send(sockfd, buf);
     Recv(sockfd, buf);
 
-    if (strcmp(buf, "RPRT 1") == 0 )
+    if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
 
     return true;
@@ -212,6 +220,8 @@ bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp)
             errors++;
         usleep(1000);
     }
+    if (errors >= n_samp)
+        return false;
     *dBFS = *dBFS / (n_samp - errors);
     return true;
 }
@@ -227,7 +237,7 @@ bool StartRecording(int sockfd)
     Send(sockfd, "U RECORD 1\n");
     Recv(sockfd, buf);
 
-    if (strcmp(buf, "RPRT 1") == 0 )
+    if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
 
     return true;
@@ -244,7 +254,7 @@ bool StopRecording(int sockfd)
     Send(sockfd, "U RECORD 0\n");
     Recv(sockfd, buf);
 
-    if (strcmp(buf, "RPRT 1") == 0 )
+    if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
 
     return true;

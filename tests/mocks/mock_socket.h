@@ -26,17 +26,13 @@ SOFTWARE.
 
 #include <stdbool.h>
 
-/* Mock socket file descriptor */
 #define MOCK_SOCKFD 42
 
-/* Mock socket functions */
 void mock_socket_reset(void);
 void mock_socket_set_response(const char *response);
-int mock_connect(char *hostname, int portno);
-bool mock_send(int sockfd, char *buf);
-bool mock_recv(int sockfd, char *buf);
-
-/* Get last command sent */
+void mock_socket_add_response(const char *response);
 const char* mock_socket_get_last_command(void);
+const char* mock_socket_get_actual_host(void);
+int mock_socket_get_actual_port(void);
 
 #endif /* _MOCK_SOCKET_H_ */

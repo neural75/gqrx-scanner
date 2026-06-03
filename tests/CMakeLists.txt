@@ -9,9 +9,12 @@ include_directories(${CMAKE_SOURCE_DIR}/tests/mocks)
 include_directories(${CMOCKA_INCLUDE_DIR})
 
 # Consolidated test executable
-add_executable(all_tests all_tests.c ${CMAKE_SOURCE_DIR}/gqrx-scan.c ${CMAKE_SOURCE_DIR}/gqrx-prot.c)
+add_executable(all_tests all_tests.c
+    ${CMAKE_SOURCE_DIR}/gqrx-scan.c
+    ${CMAKE_SOURCE_DIR}/gqrx-prot.c
+    ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c)
 target_compile_definitions(all_tests PRIVATE TESTING_BUILD)
-target_link_libraries(all_tests ${CMOCKA_LIBRARY} m)
+target_link_libraries(all_tests PRIVATE ${CMOCKA_LIBRARY} m -Wl,--wrap=write -Wl,--wrap=read -Wl,--wrap=socket -Wl,--wrap=gethostbyname -Wl,--wrap=connect)
 
 # Add consolidated test to CTest
 add_test(NAME all_tests COMMAND all_tests)
