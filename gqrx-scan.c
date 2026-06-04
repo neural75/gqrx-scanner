@@ -127,9 +127,7 @@ int             g_testing_max_bookmark_loops = -1;
 int             g_testing_bookmark_loop_count = 0;
 #endif
 
-// set squelch delta
-double          opt_squelch_delta = 0.0;
-bool            opt_squelch_delta_auto_enable = false;
+
 
 //
 // ParseInputOptions
@@ -162,14 +160,6 @@ void print_usage ( char *name )
     printf ("-y  --date                   Date Format, default is 0.\n");
     printf ("                               0 = mm-dd-yy\n");
     printf ("                               1 = dd-mm-yy\n");
-    printf ("-q, --squelch_delta <dB>|a<dB> If set creates bottom squelch just for listening.\n");
-    printf ("                             It may reduce unnecessary squelch audio supress.\n");
-    printf ("                             Default: 0.0\n");
-    printf ("                             Ex.: 6.5\n");
-    printf ("                             Place \"a\" switch before <dB> value to turn into auto mode\n");
-    printf ("                             It will determine squelch delta based on noise floor and\n");
-    printf ("                             <dB> value will determine how far squelch delta will be placed from it.\n");
-    printf ("                             Ex.: a0.5\n");
     printf ("-t, --tags <\"tags\">          Filter signals. Match only on frequencies marked with a tag found in \"tags\"\n");
     printf ("                               \"tags\" is a quoted string with a '|' list separator: Ex: \"Tag1|Tag2\"\n");
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
@@ -242,7 +232,6 @@ bool ParseInputOptions (int argc, char **argv)
           {"delay",   required_argument, 0, 'd'},
           {"speed",   required_argument, 0, 'x'},
           {"date",    required_argument, 0, 'y'},
-          {"squelch_delta",    required_argument, 0, 'q'},
           {"max-listen",       required_argument, 0, 'l'},
           {"record", no_argument, 0, 'r'},
           {0, 0, 0, 0}
@@ -250,7 +239,7 @@ bool ParseInputOptions (int argc, char **argv)
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:q:l:r",
+        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:l:r",
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -423,32 +412,6 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: Invalid date option\n", c);
                     print_usage(argv[0]);
                 }
-            break;
-
-            case 'q':
-                if (optarg[0] == '-')
-                {
-                    printf ("Error: -%c: option requires an argument\n", c);
-                    print_usage(argv[0]);
-                }
-                if (optarg[0] == 'a')
-                {
-                    if ((opt_squelch_delta = atof(optarg+1)) == 0)
-                    {
-                        printf ("Error: -%c: Invalid squelch level\n", c);
-                        print_usage(argv[0]);
-                    }
-                    opt_squelch_delta_auto_enable = true;
-                }
-                else
-                {
-                    if ((opt_squelch_delta = atof(optarg)) == 0)
-                    {
-                        printf ("Error: -%c: Invalid squelch level\n", c);
-                        print_usage(argv[0]);
-                    }
-                }
-                printf("Squelch delta set: %f\n", opt_squelch_delta);
             break;
 
             case 't':
@@ -925,7 +888,7 @@ freq_t FilterFrequency (int idx)
     return current_freq;
 }
 
-bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta)
+bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max)
 {
 
     freq_t freq = 0;
@@ -933,7 +896,6 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
     double level = 0;
     GetSignalLevel(sockfd, &level );
     double squelch = 0;
-    double squelch_backup = 0;
     GetSquelchLevel(sockfd, &squelch);
 
     freq_t current_freq = freq_min;
@@ -951,12 +913,6 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
 
         for (int i = 0; i < Frequencies_Max; i++)
         {
-            if (Frequencies[i].noise_floor == 0)
-                Frequencies[i].noise_floor = level;
-
-            //printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
-            //fflush(stdout);
-
             if ((current_freq = FilterFrequency(i)) == (freq_t) 0 )
                 continue;
             if (IsBannedFreq(&current_freq))
@@ -980,20 +936,9 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                             StartRecording(sockfd);
                         }
                         time_t hit_time = GetTime(timestamp);
-                        if (opt_squelch_delta_auto_enable)
-                        {
-                            squelch_backup = squelch;
-                            SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
-                            printf ("\n[%s] Freq: %s active [%s],\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
-                                    timestamp, print_freq(current_freq),
-                                    Frequencies[i].descr, level, squelch, Frequencies[i].noise_floor + squelch_delta);
-                        }
-                        else
-                        {
-                            printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
-                                    timestamp, print_freq(current_freq),
-                                    Frequencies[i].descr, level, squelch);
-                        }
+                        printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
+                                timestamp, print_freq(current_freq),
+                                Frequencies[i].descr, level, squelch);
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
                         time_t elapsed = DiffTime(timestamp, hit_time);
@@ -1002,12 +947,10 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                             StopRecording(sockfd);
                         }
                         printf (" [elapsed time %s]\n", timestamp);
-                        if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
                         fflush(stdout);
                     }
                     else
                     {
-                        Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
                         skip = false;
                     }
                 }
@@ -1344,14 +1287,13 @@ freq_t AdjustFrequency(int sockfd, freq_t current_freq, freq_t freq_interval)
 
 }
 
-bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval, double squelch_delta)
+bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval)
 {
     freq_t freq = 0;
     GetCurrentFreq(sockfd, &freq);
     double level = 0;
     GetSignalLevel(sockfd, &level );
     double squelch = 0;
-    double squelch_backup = 0;
     GetSquelchLevel(sockfd, &squelch);
 
     size_t freqeuencies_count = ((opt_max_freq-opt_min_freq)/opt_scan_bw); //for loop boundary
@@ -1397,12 +1339,6 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 
             GetSquelchLevel(sockfd, &squelch);
             GetSignalLevelEx(sockfd, &level, 5 );
-
-            if (Frequencies[i].noise_floor == 0)
-                Frequencies[i].noise_floor = level;
-
-            //printf("\rNoise floor: %2.2f  ", Frequencies[i].noise_floor);
-            //fflush(stdout);
 
             if (opt_verbose)
             {
@@ -1470,24 +1406,11 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     {
                         StartRecording(sockfd);
                     }
-                    if (opt_squelch_delta_auto_enable){
-                        squelch_backup = squelch;
-                        SetSquelchLevel(sockfd, Frequencies[i].noise_floor + squelch_delta);
-                    }
 
                     time_t hit_time = GetTime(timestamp);
-                    if (opt_squelch_delta_auto_enable)
-                    {
-                        printf ("\n[%s] Freq: %s active,\nLevel: %2.2f/%2.2f, Squelch set: %2.2f ",
-                                timestamp, print_freq(current_freq),
-                                level, squelch, Frequencies[i].noise_floor + squelch_delta);
-                    }
-                    else
-                    {
-                        printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
-                                timestamp, print_freq(current_freq),
-                                level, squelch );
-                    }
+                    printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
+                            timestamp, print_freq(current_freq),
+                            level, squelch );
                     fflush(stdout);
                     // Wait user input or delay time after signal lost
                     skip = WaitUserInputOrDelay(sockfd, opt_delay, &current_freq);
@@ -1498,7 +1421,6 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                     }
                     printf (" [elapsed time %s]\n", timestamp);
                     fflush(stdout);
-                    if (opt_squelch_delta_auto_enable) SetSquelchLevel(sockfd, squelch_backup);
                 }
                 if (skip)
                 {
@@ -1509,7 +1431,6 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
             else
             {
                 skip = false;
-                Frequencies[i].noise_floor = (Frequencies[i].noise_floor + level)/2;
                 // no activities
                 if (saved_cycle)
                 {
@@ -1581,8 +1502,6 @@ void SetOptDefaults(void)
     opt_date     = 0;
     opt_record   = false;
     opt_verbose  = false;
-    opt_squelch_delta = 0.0;
-    opt_squelch_delta_auto_enable = false;
 #ifdef TESTING_BUILD
     g_testing_sweep_full_count = 0;
     g_testing_max_full_sweeps = -1;
@@ -1616,7 +1535,7 @@ int main(int argc, char **argv) {
     int sockfd, portno, n;
     char *hostname;
     char buf[BUFSIZE];
-    FILE *bookmarksfd;
+    FILE *bookmarksfd = NULL;
 
     opt_hostname = (char *) g_hostname;
     opt_port     = g_portno;
@@ -1672,17 +1591,8 @@ int main(int argc, char **argv) {
 
     }
 
-    if (opt_scan_mode == sweep)
+    if (opt_scan_mode == bookmark)
     {
-        // FIXME: Neural: this is a sweep scan and should not use the Frequencies array structure designed for bookmarks (just to save a "noise_floor" value)!
-        //        what if the range is big and the bw is small?  It will allocate a lot of memory for nothing
-        //        The noise_floor level could have been calculated on the fly with a moving average on the spectrum and not per single frequency.
-        //        Infact, it is not a noise floor but the signal level at the current frequency below the squelch, integrated by previous runs.
-        //        It is also an overkill to change the squelch level dinamically (a frigging user option on gqrx): the user should set it manually of whatever value he/she wants to avoid false positives, lowering it if neccessary.
-        size_t freqeuencies_count = (size_t)(((opt_max_freq-opt_min_freq)/opt_scan_bw)+1);
-        Frequencies = malloc(freqeuencies_count*sizeof(FREQ));
-    }
-    else {
         Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
     }
 
@@ -1723,14 +1633,14 @@ int main(int argc, char **argv) {
 
     if (opt_scan_mode == sweep)
     {
-        ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_scan_bw, opt_squelch_delta);
+        ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_scan_bw);
     }
     else
     {
-        ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, opt_squelch_delta);
+        ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq);
     }
 
-    fclose (bookmarksfd);
+    if (bookmarksfd) fclose(bookmarksfd);
     close(sockfd);
     FreeFrequencies();
     return 0;

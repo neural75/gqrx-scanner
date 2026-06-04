@@ -124,11 +124,6 @@ static void run_sweep_test(const char *profile_path)
 {
     SetOptDefaults();
 
-    if (!Frequencies)
-        Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
-    assert_non_null(Frequencies);
-    Frequencies_Max = 0;
-
     mock_socket_reset();
 
     assert_true(mock_load_profile(profile_path));
@@ -154,7 +149,7 @@ static void run_sweep_test(const char *profile_path)
     close(pipefd[1]);
 
     ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq,
-                           opt_scan_bw, 0.0);
+                           opt_scan_bw);
     fflush(stdout);
 
     dup2(old_stdout, STDOUT_FILENO);
@@ -296,7 +291,7 @@ static void run_bookmark_test(const char *profile_path,
     assert_int_equal(dup2(pipefd[1], STDOUT_FILENO), STDOUT_FILENO);
     close(pipefd[1]);
 
-    ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq, 0.0);
+    ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq);
     fflush(stdout);
 
     dup2(old_stdout, STDOUT_FILENO);
@@ -312,13 +307,29 @@ static void run_bookmark_test(const char *profile_path,
                                    SWEEP_PARSER_MAX_HITS);
     int nh = mock_expected_count();
 
+    /* Helper to look up a bookmark's descr by frequency */
+    const char *lookup(freq_t f) {
+        for (int b = 0; b < n_bookmarks; b++)
+            if (bookmark_freqs[b] == f)
+                return bookmark_descrs ? bookmark_descrs[b] : NULL;
+        return NULL;
+    }
+
     diag("  Expected: ");
-    for (int e = 0; e < nh; e++)
-        diag("%llu±%llu ", (unsigned long long)mock_expected_freq(e),
-             (unsigned long long)mock_expected_tolerance(e));
+    for (int e = 0; e < nh; e++) {
+        freq_t ef = mock_expected_freq(e);
+        const char *d = lookup(ef);
+        diag("%llu", (unsigned long long)ef);
+        if (d) diag(" (%s)", d);
+        diag("±%llu ", (unsigned long long)mock_expected_tolerance(e));
+    }
     diag(" Found (%d hits): ", n_hits);
-    for (int h = 0; h < n_hits; h++)
-        diag("%llu ", (unsigned long long)hit_freqs[h]);
+    for (int h = 0; h < n_hits; h++) {
+        const char *d = lookup(hit_freqs[h]);
+        diag("%llu", (unsigned long long)hit_freqs[h]);
+        if (d) diag(" (%s)", d);
+        diag(" ");
+    }
     diag("\n");
 
     for (int e = 0; e < nh; e++)
@@ -408,7 +419,7 @@ static void test_bookmark_all_hit(void **state)
     int n = sizeof(bookmarks) / sizeof(bookmarks[0]);
 
     run_bookmark_test("tests/profiles/bookmark_all_hit.txt",
-                      bookmarks, n, descrs, 2);
+                      bookmarks, n, descrs, 1);
 }
 
 static void test_bookmark_some_hit(void **state)
@@ -420,7 +431,7 @@ static void test_bookmark_some_hit(void **state)
     int n = sizeof(bookmarks) / sizeof(bookmarks[0]);
 
     run_bookmark_test("tests/profiles/bookmark_some_hit.txt",
-                      bookmarks, n, descrs, 2);
+                      bookmarks, n, descrs, 1);
 }
 
 static void test_bookmark_all_noise(void **state)
@@ -432,7 +443,7 @@ static void test_bookmark_all_noise(void **state)
     int n = sizeof(bookmarks) / sizeof(bookmarks[0]);
 
     run_bookmark_test("tests/profiles/bookmark_all_noise.txt",
-                      bookmarks, n, descrs, 2);
+                      bookmarks, n, descrs, 1);
 }
 
 /* ==================================================================

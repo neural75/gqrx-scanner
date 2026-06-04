@@ -8,7 +8,6 @@
 /* Frequency entry — used in Frequencies[], SavedFrequencies[], BannedFrequencies[] */
 typedef struct {
     freq_t freq;
-    double noise_floor;
     int count;
     int miss;
     char descr[BUFSIZE];
@@ -40,8 +39,6 @@ extern long      opt_date;
 extern SCAN_MODE opt_scan_mode;
 extern bool      opt_record;
 extern bool      opt_verbose;
-extern double    opt_squelch_delta;
-extern bool      opt_squelch_delta_auto_enable;
 
 /* Functions */
 extern bool   LoadFrequencies(FILE *bookmarksfd);
@@ -53,8 +50,8 @@ extern bool   BanFreq(freq_t freq_current);
 extern bool   IsBannedFreq(freq_t *freq_current);
 extern void   ClearAllBans(void);
 extern freq_t FilterFrequency(int idx);
-extern bool   ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval, double squelch_delta);
-extern bool   ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta);
+extern bool   ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval);
+extern bool   ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max);
 
 /* Global state management */
 void SetOptDefaults(void);
