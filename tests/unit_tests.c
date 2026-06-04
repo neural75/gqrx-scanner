@@ -30,42 +30,10 @@ SOFTWARE.
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include "../gqrx-prot.h"
+#include "../gqrx-scan.h"
 #ifdef HAVE_WRAP_SOCKET_MOCKS
 #include "mock_socket.h"
 #endif
-
-/* FREQ type definition from gqrx-scan.c */
-typedef struct {
-    freq_t freq;
-    double noise_floor;
-    int count;
-    int miss;
-    char descr[BUFSIZE];
-    char *tags[TAG_MAX];
-    int tag_max;
-} FREQ;
-
-/* External declarations from gqrx-scan.c */
-extern FREQ* Frequencies;
-extern int Frequencies_Max;
-extern FREQ SavedFrequencies[SAVED_FREQ_MAX];
-extern int SavedFreq_Max;
-extern FREQ BannedFrequencies[SAVED_FREQ_MAX];
-extern int BannedFreq_Max;
-extern char *opt_tags[TAG_MAX];
-extern int opt_tag_max;
-
-extern bool LoadFrequencies(FILE *bookmarksfd);
-extern bool prefix(const char *pre, const char *str);
-extern char *print_freq(freq_t freq);
-extern bool ParseTags(char *tags);
-extern bool SaveFreq(freq_t freq_current);
-extern bool BanFreq(freq_t freq_current);
-extern bool IsBannedFreq(freq_t *freq_current);
-extern void ClearAllBans(void);
-extern bool opt_tag_search;
-extern freq_t FilterFrequency (int idx);
 
 /* ========================================================================
  * Utility Tests (from test_utils.c)
@@ -106,8 +74,7 @@ static void test_load_frequencies_from_file(void **state)
 {
     (void) state;
     
-    /* Allocate memory for Frequencies array */
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
@@ -120,21 +87,14 @@ static void test_load_frequencies_from_file(void **state)
     assert_int_equal(Frequencies[0].freq, 430037000);
     assert_string_equal(Frequencies[0].descr, " Beigua                   ");
     
-    /* Clean up */
-    for (int i = 0; i < Frequencies_Max; i++) {
-        for (int k = 0; k < Frequencies[i].tag_max; k++) {
-            free(Frequencies[i].tags[k]);
-        }
-    }
-    free(Frequencies);
+    FreeFrequencies();
 }
 
 static void test_load_frequencies_empty_file(void **state)
 {
     (void) state;
     
-    /* Allocate memory for Frequencies array */
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     
     FILE *fp = tmpfile();
@@ -146,16 +106,14 @@ static void test_load_frequencies_empty_file(void **state)
     
     assert_int_equal(Frequencies_Max, 0);
     
-    /* Clean up */
-    free(Frequencies);
+    FreeFrequencies();
 }
 
 static void test_frequency_tags_parsing(void **state)
 {
     (void) state;
     
-    /* Allocate memory for Frequencies array */
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
@@ -182,21 +140,14 @@ static void test_frequency_tags_parsing(void **state)
     assert_int_equal(Frequencies[4].tag_max, 1);
     assert_string_equal(Frequencies[4].tags[0], "VHF");
     
-    /* Clean up */
-    for (int i = 0; i < Frequencies_Max; i++) {
-        for (int k = 0; k < Frequencies[i].tag_max; k++) {
-            free(Frequencies[i].tags[k]);
-        }
-    }
-    free(Frequencies);
+    FreeFrequencies();
 }
 
 static void test_frequency_field_parsing(void **state)
 {
     (void) state;
     
-    /* Allocate memory for Frequencies array */
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
@@ -224,13 +175,7 @@ static void test_frequency_field_parsing(void **state)
     assert_true(Frequencies[0].freq > 0);
     assert_true(Frequencies[0].freq < 1000000000000ULL); /* reasonable range check */
     
-    /* Clean up */
-    for (int i = 0; i < Frequencies_Max; i++) {
-        for (int k = 0; k < Frequencies[i].tag_max; k++) {
-            free(Frequencies[i].tags[k]);
-        }
-    }
-    free(Frequencies);
+    FreeFrequencies();
 }
 
 /* ========================================================================
@@ -294,16 +239,8 @@ static void test_parse_tags_single(void **state)
 {
     (void) state;
     
-    /* Reset opt_tags */
-    for (int i = 0; i < opt_tag_max; i++) {
-        if (opt_tags[i]) {
-            free(opt_tags[i]);
-            opt_tags[i] = NULL;
-        }
-    }
-    opt_tag_max = 0;
+    ResetOptTags();
     
-    /* Test single tag */
     char tags[] = "VHF";
     bool result = ParseTags(tags);
     
@@ -311,28 +248,15 @@ static void test_parse_tags_single(void **state)
     assert_int_equal(opt_tag_max, 1);
     assert_string_equal(opt_tags[0], "VHF");
     
-    /* Clean up */
-    for (int i = 0; i < opt_tag_max; i++) {
-        free(opt_tags[i]);
-        opt_tags[i] = NULL;
-    }
-    opt_tag_max = 0;
+    ResetOptTags();
 }
 
 static void test_parse_tags_multiple(void **state)
 {
     (void) state;
     
-    /* Reset opt_tags */
-    for (int i = 0; i < opt_tag_max; i++) {
-        if (opt_tags[i]) {
-            free(opt_tags[i]);
-            opt_tags[i] = NULL;
-        }
-    }
-    opt_tag_max = 0;
+    ResetOptTags();
     
-    /* Test multiple tags */
     char tags[] = "DMR|VHF|UHF";
     bool result = ParseTags(tags);
     
@@ -342,28 +266,15 @@ static void test_parse_tags_multiple(void **state)
     assert_string_equal(opt_tags[1], "VHF");
     assert_string_equal(opt_tags[2], "UHF");
     
-    /* Clean up */
-    for (int i = 0; i < opt_tag_max; i++) {
-        free(opt_tags[i]);
-        opt_tags[i] = NULL;
-    }
-    opt_tag_max = 0;
+    ResetOptTags();
 }
 
 static void test_parse_tags_empty(void **state)
 {
     (void) state;
     
-    /* Reset opt_tags */
-    for (int i = 0; i < opt_tag_max; i++) {
-        if (opt_tags[i]) {
-            free(opt_tags[i]);
-            opt_tags[i] = NULL;
-        }
-    }
-    opt_tag_max = 0;
+    ResetOptTags();
     
-    /* Test empty string (should fail) */
     char tags[] = "";
     bool result = ParseTags(tags);
     
@@ -374,7 +285,8 @@ static void test_parse_tags_empty(void **state)
 static void test_filter_frequency_single_tag_match(void **state)
 {
     (void) state;
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    ResetOptTags();
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
     assert_non_null(fp);
@@ -389,17 +301,15 @@ static void test_filter_frequency_single_tag_match(void **state)
     assert_true(FilterFrequency(3) != 0);
     assert_int_equal(FilterFrequency(4), 0);
     assert_int_equal(FilterFrequency(5), 0);
-    free(opt_tags[0]); opt_tags[0] = NULL; opt_tag_max = 0;
-    for (int i = 0; i < Frequencies_Max; i++)
-        for (int k = 0; k < Frequencies[i].tag_max; k++)
-            free(Frequencies[i].tags[k]);
-    free(Frequencies);
+    ResetOptTags();
+    FreeFrequencies();
 }
 
 static void test_filter_frequency_multi_tag_or_match(void **state)
 {
     (void) state;
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    ResetOptTags();
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
     assert_non_null(fp);
@@ -411,18 +321,15 @@ static void test_filter_frequency_multi_tag_or_match(void **state)
     opt_tag_max = 2;
     for (int i = 0; i < 6; i++)
         assert_true(FilterFrequency(i) != 0);
-    for (int i = 0; i < opt_tag_max; i++) { free(opt_tags[i]); opt_tags[i] = NULL; }
-    opt_tag_max = 0; opt_tag_search = false;
-    for (int i = 0; i < Frequencies_Max; i++)
-        for (int k = 0; k < Frequencies[i].tag_max; k++)
-            free(Frequencies[i].tags[k]);
-    free(Frequencies);
+    ResetOptTags();
+    opt_tag_search = false;
+    FreeFrequencies();
 }
 
 static void test_filter_frequency_no_tag_search_disabled(void **state)
 {
     (void) state;
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
     assert_non_null(fp);
@@ -431,16 +338,14 @@ static void test_filter_frequency_no_tag_search_disabled(void **state)
     opt_tag_search = false;
     assert_int_equal(FilterFrequency(0), 430037000);
     assert_int_equal(FilterFrequency(4), 144500000);
-    for (int i = 0; i < Frequencies_Max; i++)
-        for (int k = 0; k < Frequencies[i].tag_max; k++)
-            free(Frequencies[i].tags[k]);
-    free(Frequencies);
+    FreeFrequencies();
 }
 
 static void test_filter_frequency_case_insensitive(void **state)
 {
     (void) state;
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    ResetOptTags();
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
     assert_non_null(fp);
@@ -450,17 +355,16 @@ static void test_filter_frequency_case_insensitive(void **state)
     opt_tags[0] = strdup("dmr");
     opt_tag_max = 1;
     assert_true(FilterFrequency(1) != 0);
-    free(opt_tags[0]); opt_tags[0] = NULL; opt_tag_max = 0; opt_tag_search = false;
-    for (int i = 0; i < Frequencies_Max; i++)
-        for (int k = 0; k < Frequencies[i].tag_max; k++)
-            free(Frequencies[i].tags[k]);
-    free(Frequencies);
+    ResetOptTags();
+    opt_tag_search = false;
+    FreeFrequencies();
 }
 
 static void test_filter_frequency_partial_match(void **state)
 {
     (void) state;
-    Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+    ResetOptTags();
+    Frequencies = calloc(FREQ_MAX, sizeof(FREQ));
     assert_non_null(Frequencies);
     FILE *fp = fopen("tests/fixtures/test_bookmarks.csv", "r");
     assert_non_null(fp);
@@ -471,11 +375,9 @@ static void test_filter_frequency_partial_match(void **state)
     opt_tag_max = 1;
     assert_true(FilterFrequency(3) != 0);
     assert_int_equal(FilterFrequency(0), 0);
-    free(opt_tags[0]); opt_tags[0] = NULL; opt_tag_max = 0; opt_tag_search = false;
-    for (int i = 0; i < Frequencies_Max; i++)
-        for (int k = 0; k < Frequencies[i].tag_max; k++)
-            free(Frequencies[i].tags[k]);
-    free(Frequencies);
+    ResetOptTags();
+    opt_tag_search = false;
+    FreeFrequencies();
 }
 
 static void test_save_freq_new(void **state)

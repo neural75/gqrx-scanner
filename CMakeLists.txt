@@ -28,7 +28,18 @@ find_package(cmocka QUIET)
 if(cmocka_FOUND)
     enable_testing()
     add_subdirectory(tests)
-    message(STATUS "cmocka found - tests enabled. Run 'make test' or 'ctest' to run tests.")
+    if(APPLE)
+        add_custom_target(check
+            COMMAND ${CMAKE_CTEST_COMMAND} --verbose
+            DEPENDS unit_tests
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    else()
+        add_custom_target(check
+            COMMAND ${CMAKE_CTEST_COMMAND} --verbose
+            DEPENDS unit_tests sweep_test
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    endif()
+    message(STATUS "cmocka found - tests enabled. Run 'make check' to build and test.")
 else()
     message(STATUS "cmocka not found - tests disabled. Install libcmocka-dev to enable testing.")
 endif()

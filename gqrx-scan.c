@@ -61,6 +61,7 @@ SOFTWARE.
 #include <string.h>
 #include <errno.h>
 #include "gqrx-prot.h"
+#include "gqrx-scan.h"
 
 #define NB_ENABLE    true
 #define NB_DISABLE   false
@@ -68,21 +69,7 @@ SOFTWARE.
 //
 // Globals definitions
 //
-typedef struct {
-    freq_t freq; // frequency in Mhz
-    double noise_floor; // averages noise floor of frequency
-    int count; // hit count on sweep scan
-    int miss;  // miss count on sweep scan
-    char descr[BUFSIZE]; // ugly buffer for descriptions: TODO convert it in a pointer
-    char *tags[TAG_MAX]; // tags
-    int   tag_max;
-}FREQ;
 
-typedef enum
-{
-    sweep,
-    bookmark
-} SCAN_MODE;
 
 // Stores
 /*FREQ Frequencies[FREQ_MAX] = {0};*/
@@ -133,15 +120,14 @@ bool            opt_record = false;
 // only for debug
 bool            opt_verbose = false;
 
+#ifdef TESTING_BUILD
+int             g_testing_max_full_sweeps = -1;
+int             g_testing_sweep_full_count = 0;
+#endif
+
 // set squelch delta
 double          opt_squelch_delta = 0.0;
 bool            opt_squelch_delta_auto_enable = false;
-//
-// Local Prototypes
-//
-bool BanFreq (freq_t freq_current);
-bool IsBannedFreq (freq_t *freq_current);
-void ClearAllBans ( void );
 
 //
 // ParseInputOptions
@@ -1384,6 +1370,11 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
 
     while (true)
     {
+#ifdef TESTING_BUILD
+        if (g_testing_max_full_sweeps >= 0 &&
+            g_testing_sweep_full_count >= g_testing_max_full_sweeps)
+            break;
+#endif
         for ( size_t i = 0 ; i < freqeuencies_count; i++)
         {
             CheckUserInput();
@@ -1560,10 +1551,54 @@ bool ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t
                 current_freq = freq_min;
             sweep_count++;
         }
+#ifdef TESTING_BUILD
+        g_testing_sweep_full_count++;
+#endif
     }
     return true;
 }
 
+
+void SetOptDefaults(void)
+{
+    memset(SavedFrequencies, 0, sizeof(SavedFrequencies));
+    SavedFreq_Max = 0;
+    memset(BannedFrequencies, 0, sizeof(BannedFrequencies));
+    BannedFreq_Max = 0;
+    opt_scan_bw  = 10000;
+    opt_delay    = 1;
+    opt_max_listen = 100000;
+    opt_speed    = 1;
+    opt_date     = 0;
+    opt_record   = false;
+    opt_verbose  = false;
+    opt_squelch_delta = 0.0;
+    opt_squelch_delta_auto_enable = false;
+#ifdef TESTING_BUILD
+    g_testing_sweep_full_count = 0;
+    g_testing_max_full_sweeps = -1;
+#endif
+}
+
+void FreeFrequencies(void)
+{
+    if (!Frequencies) return;
+    for (int i = 0; i < Frequencies_Max; i++)
+        for (int k = 0; k < Frequencies[i].tag_max; k++)
+            free(Frequencies[i].tags[k]);
+    free(Frequencies);
+    Frequencies = NULL;
+    Frequencies_Max = 0;
+}
+
+void ResetOptTags(void)
+{
+    for (int i = 0; i < opt_tag_max; i++) {
+        free(opt_tags[i]);
+        opt_tags[i] = NULL;
+    }
+    opt_tag_max = 0;
+}
 
 #ifndef TESTING_BUILD
 int main(int argc, char **argv) {
@@ -1686,7 +1721,7 @@ int main(int argc, char **argv) {
 
     fclose (bookmarksfd);
     close(sockfd);
-    free(Frequencies);
+    FreeFrequencies();
     return 0;
 }
 #endif /* TESTING_BUILD */

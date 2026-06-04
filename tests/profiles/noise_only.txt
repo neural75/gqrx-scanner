@@ -1,0 +1,19 @@
+#
+# Sweep test profile for gqrx-scanner
+#
+# This profile has no signals — all levels are below squelch.
+# Verifies the scanner does not false-trigger on noise (0 hits expected).
+#
+# Format:
+#   NOISE_FLOOR <level>          noise floor level (dBFS)
+#   SQUELCH    <level>           squelch threshold (dBFS)
+#   MIN_FREQ  <freq>             scan range start (Hz)
+#   MAX_FREQ  <freq>             scan range end (Hz)
+#   <freq>,<level>               carrier frequency (Hz) and level (dBFS)
+#   EXPECT: <freq> ±<tolerance>  expected hit frequency within tolerance (Hz)
+#
+NOISE_FLOOR -120
+SQUELCH    -110
+MIN_FREQ 100000000
+MAX_FREQ 100040000
+# No defined carriers — every frequency returns noise-only level

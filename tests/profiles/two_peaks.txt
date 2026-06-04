@@ -1,0 +1,24 @@
+#
+# Sweep test profile for gqrx-scanner
+#
+# Two sharp carriers at non-aligned frequencies across a wide scan range.
+# Verifies the scanner detects signals off the 10 kHz step grid
+# and that AdjustFrequency converges to a nearby step, not the
+# exact carrier frequency.
+#
+# Format:
+#   NOISE_FLOOR <level>          noise floor level (dBFS)
+#   SQUELCH    <level>           squelch threshold (dBFS)
+#   MIN_FREQ  <freq>             scan range start (Hz)
+#   MAX_FREQ  <freq>             scan range end (Hz)
+#   <freq>,<level>               carrier frequency (Hz) and level (dBFS)
+#   EXPECT: <freq> ±<tolerance>  expected hit frequency within tolerance (Hz)
+#
+NOISE_FLOOR -120
+SQUELCH    -110
+MIN_FREQ 100000000
+MAX_FREQ 102000000
+100003333,-80
+101023333,-72
+EXPECT: 100003333 ±10000
+EXPECT: 101023333 ±10000

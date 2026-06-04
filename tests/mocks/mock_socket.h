@@ -1,38 +1,29 @@
-/*
-MIT License
-
-Copyright (c) 2017 neural75
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
 #ifndef _MOCK_SOCKET_H_
 #define _MOCK_SOCKET_H_
 
 #include <stdbool.h>
+#include "../../gqrx-prot.h"
 
 #define MOCK_SOCKFD 42
 
+/* Generic response-queue (used by protocol-unit tests) */
 void mock_socket_reset(void);
 void mock_socket_set_response(const char *response);
 void mock_socket_add_response(const char *response);
 const char* mock_socket_get_last_command(void);
 const char* mock_socket_get_actual_host(void);
 int mock_socket_get_actual_port(void);
+
+/* Sweep-profile API */
+bool mock_load_profile(const char *filename);
+int  mock_expected_count(void);
+freq_t mock_expected_freq(int idx);
+freq_t mock_expected_tolerance(int idx);
+freq_t mock_profile_min_freq(void);
+freq_t mock_profile_max_freq(void);
+
+/* Keypress queue (sweep tests) */
+void mock_add_keypress(char c);
+void mock_clear_keypresses(void);
 
 #endif /* _MOCK_SOCKET_H_ */

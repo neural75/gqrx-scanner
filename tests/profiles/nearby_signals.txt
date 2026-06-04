@@ -1,0 +1,27 @@
+#
+# Sweep test profile for gqrx-scanner
+#
+# Two Gaussian-ish peaks 30 kHz apart within the same 40 kHz scan range.
+# Each is independently detected at different scan steps.
+# Exercises detection of nearby but resolvable signals.
+#
+# Format:
+#   NOISE_FLOOR <level>          noise floor level (dBFS)
+#   SQUELCH    <level>           squelch threshold (dBFS)
+#   MIN_FREQ  <freq>             scan range start (Hz)
+#   MAX_FREQ  <freq>             scan range end (Hz)
+#   <freq>,<level>               carrier frequency (Hz) and level (dBFS)
+#   EXPECT: <freq> ±<tolerance>  expected hit frequency within tolerance (Hz)
+#
+NOISE_FLOOR -120
+SQUELCH    -110
+MIN_FREQ 100000000
+MAX_FREQ 100040000
+100000000,-80
+100002000,-90
+100004000,-100
+100028000,-100
+100030000,-85
+100032000,-95
+EXPECT: 100000000 ±5000
+EXPECT: 100030000 ±5000
