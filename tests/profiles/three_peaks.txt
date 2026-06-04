@@ -1,0 +1,15 @@
+#
+# Three well-separated carriers across a 1 MHz range.
+# Verifies the scanner detects each independently with
+# no cross-interference from other peaks.
+#
+NOISE_FLOOR -120
+SQUELCH    -110
+MIN_FREQ 100000000
+MAX_FREQ 101000000
+100000000,-80
+100500000,-85
+100900000,-72
+EXPECT: 100000000 ±1000
+EXPECT: 100500000 ±1000
+EXPECT: 100900000 ±1000

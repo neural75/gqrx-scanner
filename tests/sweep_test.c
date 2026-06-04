@@ -188,6 +188,12 @@ static void test_sweep_nearby_signals(void **state)
     run_sweep_test("tests/profiles/nearby_signals.txt");
 }
 
+static void test_sweep_three_peaks(void **state)
+{
+    (void)state;
+    run_sweep_test("tests/profiles/three_peaks.txt");
+}
+
 /* ==================================================================
  * Test runner
  * ================================================================== */
@@ -198,6 +204,7 @@ int main(void)
         cmocka_unit_test(test_sweep_noise_only),
         cmocka_unit_test(test_sweep_two_peaks),
         cmocka_unit_test(test_sweep_nearby_signals),
+        cmocka_unit_test(test_sweep_three_peaks),
     };
 
     return cmocka_run_group_tests(tests, NULL, NULL);
