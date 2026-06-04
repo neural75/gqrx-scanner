@@ -32,6 +32,9 @@
 - **key constants**: `BUFSIZE=1024`, `FREQ_MAX=4096`, `SAVED_FREQ_MAX=1000`, `TAG_MAX=100`, `g_default_scan_bw=10000`, `g_portno=7356`
 - **`freq_t`**: `typedef unsigned long long`
 
+## Commit
+- **NEVER commit or push without explicit instruction** — the user says "commit" when ready, no need to ask after every change.
+
 ## Style
 - C99, 4-space indent, no tabs
 - snake_case for functions/variables, UPPER_CASE for macros

@@ -1,0 +1,7 @@
+#
+# Bookmark test: no carriers, all bookmarks below squelch
+#
+NOISE_FLOOR -120
+SQUELCH -110
+MIN_FREQ 144000000
+MAX_FREQ 147000000

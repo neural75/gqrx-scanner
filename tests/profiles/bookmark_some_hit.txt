@@ -1,0 +1,9 @@
+#
+# Bookmark test: only one of the three bookmarks has a carrier
+#
+NOISE_FLOOR -120
+SQUELCH -110
+MIN_FREQ 144000000
+MAX_FREQ 147000000
+145000000,-80
+EXPECT: 145000000 ±1000

@@ -54,6 +54,7 @@ extern bool   IsBannedFreq(freq_t *freq_current);
 extern void   ClearAllBans(void);
 extern freq_t FilterFrequency(int idx);
 extern bool   ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval, double squelch_delta);
+extern bool   ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, double squelch_delta);
 
 /* Global state management */
 void SetOptDefaults(void);
@@ -64,6 +65,8 @@ void ResetOptTags(void);
 #ifdef TESTING_BUILD
 extern int g_testing_max_full_sweeps;
 extern int g_testing_sweep_full_count;
+extern int g_testing_max_bookmark_loops;
+extern int g_testing_bookmark_loop_count;
 #endif
 
 #endif /* GQRX_SCAN_H */

@@ -123,6 +123,8 @@ bool            opt_verbose = false;
 #ifdef TESTING_BUILD
 int             g_testing_max_full_sweeps = -1;
 int             g_testing_sweep_full_count = 0;
+int             g_testing_max_bookmark_loops = -1;
+int             g_testing_bookmark_loop_count = 0;
 #endif
 
 // set squelch delta
@@ -1011,6 +1013,13 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                 }
         }
 
+#ifdef TESTING_BUILD
+        g_testing_bookmark_loop_count++;
+        if (g_testing_max_bookmark_loops > 0 &&
+            g_testing_bookmark_loop_count >= g_testing_max_bookmark_loops)
+            return true;
+#endif
+
     }
 
 }
@@ -1577,6 +1586,8 @@ void SetOptDefaults(void)
 #ifdef TESTING_BUILD
     g_testing_sweep_full_count = 0;
     g_testing_max_full_sweeps = -1;
+    g_testing_bookmark_loop_count = 0;
+    g_testing_max_bookmark_loops = -1;
 #endif
 }
 

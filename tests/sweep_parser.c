@@ -32,8 +32,8 @@ int parse_hit_report(const char *captured, freq_t *hits, int max_hits)
 
         hits[count++] = (freq_t)mhz * 1000000ULL + (freq_t)khz * 1000ULL;
 
-        /* find the next newline to continue scanning */
-        p = strchr(tag, '\n');
+        /* advance past current "Freq: " to find the next one */
+        p = strstr(tag + 1, "Freq: ");
         if (!p)
             break;
     }
