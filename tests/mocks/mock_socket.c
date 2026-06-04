@@ -219,18 +219,48 @@ static double noise_sample(void)
     return profile_noise_floor - r * 5.0;
 }
 
-/* carrier level within ±5kHz radius, random noise otherwise */
+/* carrier level with quadratic roll-off over ±5kHz radius,
+ * noise otherwise (random jitter near noise floor) */
 static double signal_at_freq(freq_t freq)
 {
+    int bw = 5000;
+
     for (int i = 0; i < carriers_count; i++)
     {
-        freq_t dist = (freq > carriers_freqs[i])
-                     ? freq - carriers_freqs[i]
-                     : carriers_freqs[i] - freq;
-        if (dist <= 5000)
-            return carriers_levels[i];
+        freq_t dv = (freq > carriers_freqs[i])
+                  ? freq - carriers_freqs[i]
+                  : carriers_freqs[i] - freq;
+        if (dv <= bw)
+        {
+            /* Normalized distance: 0 = carrier center, 1 = bandwidth edge */
+            double norm_d = (double)dv / (double)bw;
+
+            /*
+             * Quadratic roll-off from carrier peak down to noise floor.
+             *
+             * In dBFS both values are negative (e.g. -80 peak, -120 floor).
+             * The total drop from peak to floor is:
+             *   drop = carrier_level - noise_floor   (always positive, e.g. 40 dB)
+             *
+             * At center (norm_d=0): level = carrier_level  (strongest signal)
+             * At edge   (norm_d=1): level = noise_floor    (no signal)
+             * In between: level = carrier_level - drop * norm_d²
+             *
+             * Example: carrier=-80, noise_floor=-120, drop=40:
+             *   dv=0    norm_d=0.0   -80 - 40*0.00 =  -80
+             *   dv=2500 norm_d=0.5   -80 - 40*0.25 =  -90
+             *   dv=5000 norm_d=1.0   -80 - 40*1.00 = -120
+             */
+            double drop = carriers_levels[i] - profile_noise_floor;
+            return carriers_levels[i] - drop * norm_d * norm_d;
+        }
     }
-    return noise_sample();
+
+    /* No carrier within bandwidth — random noise near the floor */
+    {
+        double r = (double)rand() / (double)RAND_MAX;
+        return profile_noise_floor - r * 5.0;
+    }
 }
 
 /* ==================================================================
