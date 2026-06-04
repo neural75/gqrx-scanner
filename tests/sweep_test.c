@@ -185,7 +185,7 @@ static void test_sweep_two_peaks(void **state)
 static void test_sweep_nearby_signals(void **state)
 {
     (void)state;
-    run_sweep_test("tests/profiles/nearby_signals.txt");
+    run_sweep_test("tests/profiles/two_nearby_signal.txt");
 }
 
 static void test_sweep_three_peaks(void **state)
