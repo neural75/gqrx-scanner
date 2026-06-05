@@ -97,9 +97,6 @@ const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
 const long      g_delay             = 2500000; // 2.5 sec in microseconds
 const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
-const long      g_adaptive_settle_max = 350000;  // max settle wait in µs (350ms)
-const long      g_adaptive_poll_step  = 50000;   // poll interval in µs (50ms)
-//
 // Input options
 //
 char           *opt_hostname = NULL;
@@ -110,7 +107,7 @@ freq_t          opt_max_freq = 0;
 freq_t          opt_scan_bw = g_default_scan_bw;
 long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250 attempt to fix 'no delay argument given' stoppage on bookmark scan
 //LWVMOBILE: New variables inserted here
-long            opt_speed = 0;
+long            opt_speed = 350000;
 long            opt_date = 0;
 //LWVMOBILE; End new variables.
 SCAN_MODE       opt_scan_mode = sweep;
@@ -157,9 +154,9 @@ void print_usage ( char *name )
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
     printf ("-l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0, no maximum\n");
-    printf ("-x, --speed <time>           Time in milliseconds for bookmark scan settle time.\n");
-    printf ("                               Default: adaptive (waits for signal to stabilize, max %ldms).\n", g_adaptive_settle_max / 1000);
-    printf ("                               Set a fixed value to disable adaptive behavior.\n");
+    printf ("-x, --speed <time>           Time in milliseconds for bookmark scan settle delay.\n");
+    printf ("                               Default: 350 milliseconds.\n");
+    printf ("                               If scan lands on wrong bookmark during search, increase this value.\n");
     printf ("-y  --date                   Date Format, default is 0.\n");
     printf ("                               0 = mm-dd-yy\n");
     printf ("                               1 = dd-mm-yy\n");
@@ -927,51 +924,8 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     // Found a bookmark in the range
                     SetFreq(sockfd, current_freq);
                     GetSquelchLevel(sockfd, &squelch);
-                    if (opt_speed == 0)
-                    {
-                        // Adaptive mode: poll for early detection.
-                        // To discard stale readings from the previous
-                        // frequency, we only accept an above-squelch
-                        // reading after we have seen the level drop
-                        // below squelch at least once (proving the
-                        // pipe has flushed).
-                        long waited = 0;
-                        bool seen_below = false;
-                        if (opt_verbose)
-                            printf("[dbg] Adaptive poll start for %s, squelch=%.1f\n",
-                                   print_freq(current_freq), squelch);
-                        while (waited < g_adaptive_settle_max)
-                        {
-                            usleep(g_adaptive_poll_step);
-                            waited += g_adaptive_poll_step;
-                            double sample;
-                            if (!GetSignalLevel(sockfd, &sample)) continue;
-                            if (opt_verbose)
-                                printf("  [dbg]  poll waited=%ld  level=%.1f  seen_below=%d\n",
-                                       waited / 1000, sample, seen_below);
-                            if (sample < squelch)
-                                seen_below = true;
-                            if (seen_below && sample >= squelch)
-                            {
-                                level = sample;
-                                if (opt_verbose)
-                                    printf("  [dbg]  -> above squelch after flush, early catch\n");
-                                goto found;
-                            }
-                        }
-                        if (opt_verbose)
-                            printf("  [dbg]  -> timeout, GetSignalLevelEx...\n");
-                    }
-                    else
-                    {
-                        // Fixed mode: user set -x, no heuristics
-                        usleep((skip) ? slow_scan_cycle : opt_speed);
-                    }
+                    usleep((skip) ? slow_scan_cycle : opt_speed);
                     GetSignalLevelEx(sockfd, &level, 5 );
-                    if (opt_verbose)
-                        printf("  [dbg]  level_ex=%.1f %s squelch=%.1f\n",
-                               level, level >= squelch ? ">=" : "<", squelch);
-found:
                     if (level >= squelch)
                     {
                         if (opt_record)
@@ -1541,7 +1495,7 @@ void SetOptDefaults(void)
     opt_scan_bw  = 10000;
     opt_delay    = 1;
     opt_max_listen = 100000;
-    opt_speed    = 0;
+    opt_speed    = 1;
     opt_date     = 0;
     opt_record   = false;
     opt_verbose  = false;
