@@ -4,14 +4,14 @@ cmake_minimum_required(VERSION 3.5.0)
 find_package(cmocka REQUIRED)
 
 # Include directories
-include_directories(${CMAKE_SOURCE_DIR})
+include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/tests/mocks)
 include_directories(${CMOCKA_INCLUDE_DIR})
 
 # Unit test executable (utility, protocol, filter, file ops)
 add_executable(unit_tests unit_tests.c
-    ${CMAKE_SOURCE_DIR}/gqrx-scan.c
-    ${CMAKE_SOURCE_DIR}/gqrx-prot.c)
+    ${CMAKE_SOURCE_DIR}/src/gqrx-scan.c
+    ${CMAKE_SOURCE_DIR}/src/gqrx-prot.c)
 target_compile_definitions(unit_tests PRIVATE TESTING_BUILD)
 
 if(NOT APPLE)
@@ -36,8 +36,8 @@ if(NOT APPLE)
         ${CMAKE_SOURCE_DIR}/tests/sweep_parser.c
         ${CMAKE_SOURCE_DIR}/tests/sweep_mock.c
         ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c
-        ${CMAKE_SOURCE_DIR}/gqrx-scan.c
-        ${CMAKE_SOURCE_DIR}/gqrx-prot.c)
+        ${CMAKE_SOURCE_DIR}/src/gqrx-scan.c
+        ${CMAKE_SOURCE_DIR}/src/gqrx-prot.c)
     target_compile_definitions(sweep_test PRIVATE TESTING_BUILD)
     target_link_libraries(sweep_test PRIVATE
         ${CMOCKA_LIBRARY} m

@@ -1,7 +1,7 @@
 #ifndef SWEEP_PARSER_H
 #define SWEEP_PARSER_H
 
-#include "../gqrx-prot.h"
+#include "../src/gqrx-prot.h"
 
 #define SWEEP_PARSER_MAX_HITS 256
 

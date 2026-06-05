@@ -8,10 +8,17 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} CACHE PATH "E
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} CACHE PATH "Library output path")
 
 # The following folder will be included
-include_directories("${PROJECT_SOURCE_DIR}")
-add_executable(gqrx-scanner ${PROJECT_SOURCE_DIR}/gqrx-scan.c ${PROJECT_SOURCE_DIR}/gqrx-prot.c)
+include_directories("${PROJECT_SOURCE_DIR}/src")
+
+set(VOX_SOURCES "")
+if(NOT APPLE)
+    list(APPEND VOX_SOURCES ${PROJECT_SOURCE_DIR}/src/vox-audio.c)
+endif()
+
+add_executable(gqrx-scanner ${PROJECT_SOURCE_DIR}/src/gqrx-scan.c ${PROJECT_SOURCE_DIR}/src/gqrx-prot.c ${VOX_SOURCES})
 target_link_libraries(gqrx-scanner m)
 install (TARGETS gqrx-scanner DESTINATION bin)
+install (PROGRAMS ${PROJECT_SOURCE_DIR}/gqrx-scan-setup-audio.sh DESTINATION bin)
 # uninstall target
 if(NOT TARGET uninstall)
     configure_file(
