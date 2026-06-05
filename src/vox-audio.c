@@ -15,7 +15,7 @@ static FILE *audio_fp = NULL;
 
 //
 // Saved SIGPIPE handler so we can restore it on shutdown.
-// popen() gives us a pipe to a child process (pw-cat).  If pw-cat crashes
+// popen() gives us a pipe to a child process.  If the child crashes
 // or disconnects while we are trying to fread(), the kernel delivers
 // SIGPIPE to us.  The default action for SIGPIPE is to terminate the
 // process — which would kill the scanner.  We ignore it instead so that
@@ -46,7 +46,8 @@ bool VoxAudioInit(void)
     // ------ SIGPIPE handling ------
     //
     // 1. Query current SIGPIPE disposition (don't assume SIG_DFL).
-    // 2. Override with SIG_IGN so that pw-cat dying does not take us down.
+    // 2. Override with SIG_IGN so that the child dying does not take us
+    //    down.
     // 3. Save the old handler for restoration in VoxAudioShutdown().
     //
     // The query can fail (e.g. EINVAL), but that is non-fatal — we log
@@ -77,7 +78,8 @@ bool VoxAudioInit(void)
     FILE *probe = popen("command -v pw-cat >/dev/null 2>&1", "r");
     if (probe == NULL)
     {
-        fprintf(stderr, "[ ERROR ] Failed to probe for pw-cat: %s\n", strerror(errno));
+        fprintf(stderr, "[ ERROR ] Failed to probe for pw-cat: %s\n",
+                strerror(errno));
         goto fail_sig;
     }
     rc = pclose(probe);
@@ -91,13 +93,22 @@ bool VoxAudioInit(void)
 
     // ------ Open capture pipe ------
     //
-    // Command: pw-cat --record -d <monitor> --channels=1 --format=u8
-    //   --rate=8000 --raw
+    // Command: pw-cat --record --properties="..." --channels=1 --format=u8
+    //   --rate=8000 --raw -
     //
-    // -d gqrx-scanner-intercept.monitor
-    //   The monitor source of the null sink created by
-    //   gqrx-scan-setup-audio.sh.  The monitor carries only the audio
-    //   that was routed to that null sink, i.e. the target app's output.
+    // --properties="stream.capture.sink=true target.object=gqrx-scanner-intercept"
+    //   Tells PipeWire to capture from the sink's monitor output ports
+    //   rather than looking for an Audio/Source node.  The "target.object"
+    //   identifies the sink by node.name.  This is the same SPA property
+    //   syntax used by pw-loopback's -i flag.
+    //
+    //   Without this flag, pw-cat --record only sees nodes with
+    //   media.class=Audio/Source.  The null sink's monitor is exposed as
+    //   output ports on the sink node itself, not as a separate Source
+    //   node, so stream.capture.sink is required.
+    //
+    // - (dash filename)
+    //   Write raw PCM to stdout so popen can read it.
     //
     // --channels=1 --format=u8 --rate=8000 --raw
     //   Raw unsigned 8-bit PCM at 8 kHz, mono.  This is good enough for
@@ -109,9 +120,11 @@ bool VoxAudioInit(void)
     //   when PipeWire is not running).  We detect failure via fread()
     //   returning 0/EOF instead.
     //
-    audio_fp = popen("pw-cat --record -d gqrx-scanner-intercept.monitor "
+    audio_fp = popen("pw-cat --record "
+                     "--properties=\"stream.capture.sink=true "
+                     "target.object=gqrx-scanner-intercept\" "
                      "--channels=1 --format=u8 --rate=8000 "
-                     "--raw 2>/dev/null", "r");
+                     "--raw - 2>/dev/null", "r");
     if (audio_fp == NULL)
     {
         fprintf(stderr, "[ ERROR ] Failed to start audio capture: %s\n"
@@ -140,7 +153,7 @@ void VoxAudioShutdown(void)
     if (audio_fp == NULL)
         return;
 
-    // Close the pipe and reap the pw-cat child process.
+    // Close the pipe and reap the child process.
     //
     // pclose() waits for the child to exit and returns its exit status.
     // A non-zero exit is not necessarily an error — pw-cat exits with
@@ -179,12 +192,6 @@ void VoxAudioShutdown(void)
 // error messages.  The SIGPIPE / state management logic is identical.
 // ---------------------------------------------------------------------------
 
-//
-// VoxAudioInit_PA
-//   Same as VoxAudioInit() but uses pacat instead of pw-cat.
-//   Intended as a drop-in alternative for debugging on systems where
-//   PulseAudio is used instead of PipeWire.
-//
 bool VoxAudioInit_PA(void)
 {
     struct sigaction sa;
@@ -206,7 +213,8 @@ bool VoxAudioInit_PA(void)
     FILE *probe = popen("command -v pacat >/dev/null 2>&1", "r");
     if (probe == NULL)
     {
-        fprintf(stderr, "[ ERROR ] Failed to probe for pacat: %s\n", strerror(errno));
+        fprintf(stderr, "[ ERROR ] Failed to probe for pacat: %s\n",
+                strerror(errno));
         goto fail_sig;
     }
     rc = pclose(probe);
@@ -236,12 +244,6 @@ fail_sig:
     return false;
 }
 
-//
-// VoxAudioShutdown_PA
-//   Same as VoxAudioShutdown() — shuts down the pacat capture pipe.
-//   Since the static FILE pointer is shared with the primary functions,
-//   this works regardless of which init variant was called.
-//
 void VoxAudioShutdown_PA(void)
 {
     int rc;
