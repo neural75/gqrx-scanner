@@ -23,9 +23,11 @@ In sweep mode the scan of the band is performed fast (well, as fast as it can), 
 * Automatic Frequency Locking in sweep scan mode
 * Interactive monitor to skip, ban or pause a frequency manually
 * Automatic recording of detected signals
+* Voice Activity Detection (VOX) for squelch-bypassing listen timeout (Linux only)
 
 ## Pre-requisites
 Gqrx Remote Protocol must be enabled: Tools->Remote Control. See [this](http://gqrx.dk/doc/remote-control).
+PipeWire and pw-cat are required for VOX (Linux only). See "Voice Activity Detection (VOX)" section below.
 
 ## Notes on Gqrx settings
 It is advisable to disable AGC during the scan: adjust the fixed gain lowering the noise floor to at least -60/-70 dBFS and set the squelch level to -50/-40 dBFS, depending on the band activities and noise levels.
@@ -49,6 +51,7 @@ gqrx-scanner
 		[-t|--tags <"tag1|tag2|...">]
 		[-v|--verbose]
 		[-r|--record]
+		[--vox]
 
 -h, --host <host>            Name of the host to connect. Default: localhost
 -p, --port <port>            The number of the port to connect. Default: 7356
@@ -60,7 +63,8 @@ gqrx-scanner
 -e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
 -s, --step <freq>            Frequency step <freq> in Hz. Default: 10000
 -d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000
--l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0, no maximum
+-l, --max-listen <time>      Maximum time to listen (ms). In VOX mode, max silence before closing.
+                               Default 0, no maximum
 -x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.
                                If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed
 -y  --date                   Date Format, default is 0.
@@ -72,6 +76,8 @@ gqrx-scanner
                                Works only with -m bookmark scan mode
 -r, --record                 Enable recording of detected signals
 -v, --verbose                Output more information during scan (used for debug). Default: false
+--vox                        Enable voice activity detection. Requires PipeWire + pw-cat
+                               (see "Voice Activity Detection" section).
 --help                       This help message.
 
 ```
@@ -84,6 +90,65 @@ These keyboard shortcuts are available during scan:
 'c'                 :   Clears all banned frequencies.
 'p'                 :   Pauses scan on locked frequency, 'p' again to unpause.
 ```
+
+## Voice Activity Detection (VOX)
+
+*Linux only* — requires a PipeWire based distro (pipewire-bin package) and a compatible audio setup.
+*MacOSX is not supported* due to the lack of a portable audio interception method.
+
+VOX uses PipeWire to capture the receiver's audio produced by an
+arbitrary demodulator program and detect voice, leveraging the listen
+option (-l) as a max silence timeout.
+
+On digital modes like DMR the carrier is always present even when no
+voice channel is active, so the traditional squelch-based approach
+will either stop the scan or timeout when using the -l option.  VOX
+solves this by analyzing the demodulated audio for actual speech.
+
+Without VOX, the scanner listens to any signal that opens the squelch
+(noise, hum, interference) for the full -l duration.  With VOX, the
+pitch-based voice detector resets the listen timer when speech is
+detected, so active conversations hold the frequency past the -l
+limit.  Silence counting means -l becomes "max silence before moving
+on" rather than "max total listen time" — the scanner leaves quiet
+frequencies quickly and stays on busy ones.
+
+### Audio interception (gqrx-scan-setup-audio.sh)
+
+The script creates a virtual null sink that intercepts your app's
+audio, duplicating it so the scanner can analyze it for voice without
+muting the speakers:
+
+  1. Creates a virtual "null sink" (gqrx-scanner-intercept)
+  2. Redirects your demodulator (DSD, GQRX, etc.) to this null sink
+  3. Sets up a loopback from the null sink back to your speakers
+
+Audio now flows: app → null sink → (speakers + scanner capture)
+
+### Usage
+
+1. Find your demodulator's name:
+   ```
+   ./gqrx-scan-setup-audio.sh list-processes
+   ```
+
+2. Attach the interceptor:
+   ```
+   ./gqrx-scan-setup-audio.sh attach dsd
+   ```
+   ("gqrx-scanner-intercept" appears in pw-cli or pavucontrol Recording)
+
+3. Run the scanner with VOX:
+   ```
+   ./gqrx-scanner --vox -l 5000
+   ```
+   (stays open on voice, breaks after 5s of silence)
+
+4. Clean up when done:
+   ```
+   ./gqrx-scan-setup-audio.sh detach
+   ./gqrx-scan-setup-audio.sh cleanup
+   ```
 
 ## Examples
 Performs a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx:
@@ -114,6 +179,12 @@ Performs a scan using Gqrx bookmarks, monitoring only the frequencies tagged wit
 Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of	3 secs as idle time after a signal is lost, restarting the sweep loop when this time expires:
 ```
 ./gqrx-scanner --min 430000000 --max 431000000 -d 3000
+```
+<br>
+
+VOX bookmark scan with 5s silence timeout, searching only DMR frequencies (see "Voice Activity Detection (VOX)" section for setup):
+```
+./gqrx-scanner -m bookmark --vox -l 5000 --tags "DMR"
 ```
 
 ### Sample output
