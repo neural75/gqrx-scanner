@@ -252,6 +252,26 @@ create_null_sink() {
 }
 
 # ---------------------------------------------------------------------------
+# Connect a stream's output ports to a target sink, creating links that
+# don't already exist.  Lists the stream's output ports via pw-link -o and
+# links each to the corresponding playback port on the sink.  Silently
+# skips ports that are already linked (pw-link rejects duplicates).
+# ---------------------------------------------------------------------------
+connect_stream_to_sink() {
+    local stream="$1"
+    local sink="$2"
+
+    pw-link -o 2>/dev/null | grep "^${stream}:" | while read port; do
+        port_suffix="${port#*:}"
+        target_suffix=$(printf "%s" "$port_suffix" | sed 's/^output_/playback_/')
+        if [ -n "$target_suffix" ]; then
+            pw-link "$port" "${sink}:${target_suffix}" 2>/dev/null || \
+                pw-link "$port" "$sink" 2>/dev/null || true
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
 # Move a stream from its current sink to a target sink.
 # Iterates each output port of the stream, disconnects playback links to
 # the old sink, and reconnects them to the new sink.
@@ -307,17 +327,15 @@ find_default_sink() {
     local result
     result=$(pw-cli list-objects Node 2>/dev/null | awk -v skip="$NULL_SINK_NAME" '
     /^[ \t]+id [0-9]+,/ {
-        if (found) next
+        if (in_node && media_class == "Audio/Sink" && node_name != skip && node_name != "") {
+            print node_name; found = 1; exit
+        }
         node_id = $0; sub(/^[ \t]+id /, "", node_id); sub(/,.*/, "", node_id)
         in_node = 1; node_name = ""; media_class = ""
     }
     in_node && /media\.class = / { gsub(/^[ \t]*[^=]*= /, "", $0); gsub(/^"|"$|[,]/, "", $0); media_class = $0 }
     in_node && /node\.name = / { gsub(/^[ \t]*[^=]*= /, "", $0); gsub(/^"|"$|[,]/, "", $0); node_name = $0 }
-    in_node && /^[ \t]*$/ && media_class == "Audio/Sink" && node_name != skip {
-        print node_name
-        found = 1
-    }
-    END { if (!found) print "" }')
+    END { if (!found && in_node && media_class == "Audio/Sink" && node_name != skip && node_name != "") print node_name }')
     if [ -z "$result" ]; then
         echo "[ ERROR ] No audio output sink available!" >&2
         return 1
@@ -370,8 +388,12 @@ case "${1:-}" in
         stream_name=$(get_stream_node_name "$pattern") || exit 1
         echo "Found stream: $stream_name"
 
-        # Find current sink
-        orig_sink=$(get_stream_sink_name "$stream_name") || exit 1
+        # Find current sink.  If the stream is orphaned (e.g. after a
+        # previous cleanup that destroyed its sink), use the default sink.
+        orig_sink=$(get_stream_sink_name "$stream_name" 2>/dev/null) || {
+            echo "[ WARNING ] Stream '$stream_name' is orphaned. Using default sink." >&2
+            orig_sink=$(find_default_sink) || exit 1
+        }
         echo "Stream currently playing to sink: $orig_sink"
 
         ensure_state_dir
@@ -407,6 +429,10 @@ case "${1:-}" in
         # Move the stream's output ports from original sink → null sink
         echo "Moving stream '$stream_name' to null sink..."
         move_stream "$stream_name" "$NULL_SINK_NAME"
+
+        # Also connect any orphaned output ports (streams that lost their
+        # sink entirely, or extra ports move_stream didn't handle).
+        connect_stream_to_sink "$stream_name" "$NULL_SINK_NAME"
 
         # Save state for detach
         echo "stream_node_name='$stream_name'"   > "$STATE_DIR/state"
@@ -451,6 +477,20 @@ case "${1:-}" in
         ;;
 
     cleanup)
+        # Kill any pw-cat VAD processes still capturing from the intercept sink
+        pkill -f "pw-cat.*$NULL_SINK_NAME" 2>/dev/null
+
+        # Orphaned stream recovery — move any app still connected to the null
+        # sink back to a real sink before destroying it.
+        stream=$(find_stream_on_null_sink)
+        if [ -n "$stream" ]; then
+            default_sink=$(find_default_sink) || true
+            if [ -n "$default_sink" ]; then
+                echo "Moving stream '$stream' to '$default_sink'..."
+                move_stream "$stream" "$default_sink"
+            fi
+        fi
+
         rm -f "$STATE_DIR/state"
         pkill -x "pw-loopback" 2>/dev/null
         _cleanup_null_sinks

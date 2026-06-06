@@ -161,8 +161,11 @@ bool VoxAudioInit(void)
     //   returning 0/EOF instead.
     //
     audio_fp = popen("pw-cat --record "
-                     "--properties=\"stream.capture.sink=true "
-                     "target.object=gqrx-scanner-intercept\" "
+                     "-P '{\"stream.capture.sink\":true,"
+                     "\"target.object\":\"gqrx-scanner-intercept\","
+                     "\"node.name\":\"gqrx-scanner\","
+                     "\"application.name\":\"gqrx-scanner\","
+                     "\"application.id\":\"com.github.neural75.gqrx-scanner\"}' "
                      "--channels=1 --format=s16 --rate=8000 "
                      "--raw - 2>/dev/null", "r");
     if (audio_fp == NULL)
