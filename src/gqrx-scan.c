@@ -586,14 +586,14 @@ time_t DiffTime(char *timestamp, time_t start_time)
 
     if (ltime->tm_mday > 1)
     {
-          char days[10];
-          sprintf(days, "%2d days ", ltime->tm_mday);
+          char days[32];
+          snprintf(days, sizeof(days), "%2d days ", ltime->tm_mday);
           strcat(timestamp, days);
     }
     if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
     {
-          char hours[10];
-          sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
+          char hours[16];
+          snprintf(hours, sizeof(hours), "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
           strcat(timestamp, hours);
     }
 
