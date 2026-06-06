@@ -100,7 +100,6 @@ const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
 const long      g_delay             = 2500000; // 2.5 sec in microseconds
 const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
-//
 // Input options
 //
 char           *opt_hostname = NULL;
@@ -111,7 +110,7 @@ freq_t          opt_max_freq = 0;
 freq_t          opt_scan_bw = g_default_scan_bw;
 long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250 attempt to fix 'no delay argument given' stoppage on bookmark scan
 //LWVMOBILE: New variables inserted here
-long            opt_speed = 250000;
+long            opt_speed = 350000;
 long            opt_date = 0;
 //LWVMOBILE; End new variables.
 SCAN_MODE       opt_scan_mode = sweep;
@@ -162,8 +161,9 @@ void print_usage ( char *name )
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
     printf ("-l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0, no maximum\n");
-    printf ("-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.\n");
-    printf ("                               If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed\n");
+    printf ("-x, --speed <time>           Time in milliseconds for bookmark scan settle delay.\n");
+    printf ("                               Default: 350 milliseconds.\n");
+    printf ("                               If scan lands on wrong bookmark during search, increase this value.\n");
     printf ("-y  --date                   Date Format, default is 0.\n");
     printf ("                               0 = mm-dd-yy\n");
     printf ("                               1 = dd-mm-yy\n");
@@ -988,10 +988,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     // Found a bookmark in the range
                     SetFreq(sockfd, current_freq);
                     GetSquelchLevel(sockfd, &squelch);
-                    //usleep((skip)?sleep_cycle_active:sleep_cyle_saved);       //LWVMOBILE: Perhaps place a small sleep here of 1000ms, slow scan to prevent 'slipping' issue in bookmark search.
-                    //usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
-                    usleep((skip)?slow_scan_cycle:opt_speed);                   //LWVMOBILE: Using new variable set by default and also by user switch. Seems to work. GJ ME.
-                    // LWVMOBILE: Scan stoppage due to no delay argument given has been fixed, was a variable set way too high.
+                    usleep((skip) ? slow_scan_cycle : opt_speed);
                     GetSignalLevelEx(sockfd, &level, 5 );
                     if (level >= squelch)
                     {
