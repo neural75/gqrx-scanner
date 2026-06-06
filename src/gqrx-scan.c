@@ -727,9 +727,16 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 
     do
     {
-        GetCurrentFreq(sockfd,  current_freq);
-        GetSquelchLevel(sockfd, &squelch);
-        GetSignalLevel(sockfd,  &level );
+        // If any of the TCP reads fails (e.g. timeout after resume from
+        // suspend), skip the rest of this iteration and try again after
+        // a short sleep rather than blocking or acting on stale data.
+        if (!GetCurrentFreq(sockfd,  current_freq) ||
+            !GetSquelchLevel(sockfd, &squelch)     ||
+            !GetSignalLevel(sockfd,  &level ))
+        {
+            usleep(sleep);
+            continue;
+        }
         exit = kbhit();
         if (exit !=  0)
         {

@@ -34,6 +34,8 @@ SOFTWARE.
 #include <fcntl.h>
 #include <pwd.h>
 #include <stdbool.h>
+#include <errno.h>
+#include <sys/time.h>
 #ifndef OSX
 #include <linux/limits.h>
 #else
@@ -82,6 +84,19 @@ int Connect (char *hostname, int portno)
     if (connect(sockfd, (const struct sockaddr *) &serveraddr, sizeof(serveraddr)) < 0)
       error("ERROR connecting");
 
+    /* Set receive and send timeouts so that read()/write() do not block
+     * indefinitely on a broken TCP connection (e.g. after resume from
+     * suspend).  3 seconds is long enough for localhost and short enough
+     * that the scanner feels responsive on failure.
+     * (Skipped in test builds — mocked sockets don't support these opts.) */
+#ifndef TESTING_BUILD
+    struct timeval tv = { .tv_sec = 3, .tv_usec = 0 };
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0)
+        fprintf(stderr, "Warning: could not set SO_RCVTIMEO: %s\n", strerror(errno));
+    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) < 0)
+        fprintf(stderr, "Warning: could not set SO_SNDTIMEO: %s\n", strerror(errno));
+#endif
+
     return sockfd;
 }
 //
@@ -93,7 +108,10 @@ bool Send(int sockfd, char *buf)
 
     n = write(sockfd, buf, strlen(buf));
     if (n < 0)
-      error("ERROR writing to socket");
+    {
+        fprintf(stderr, "Warning: write to socket failed: %s\n", strerror(errno));
+        return false;
+    }
     return true;
 }
 
@@ -106,7 +124,11 @@ bool Recv(int sockfd, char *buf)
 
     n = read(sockfd, buf, BUFSIZE - 1);
     if (n < 0)
-      error("ERROR reading from socket");
+    {
+        fprintf(stderr, "Warning: read from socket failed: %s\n", strerror(errno));
+        buf[0] = '\0';
+        return false;
+    }
     buf[n]= '\0';
     return true;
 }
@@ -119,8 +141,10 @@ bool GetCurrentFreq(int sockfd, freq_t *freq)
 {
     char buf[BUFSIZE];
 
-    Send(sockfd, "f\n");
-    Recv(sockfd, buf);
+    if (!Send(sockfd, "f\n"))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
 
     if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
@@ -133,8 +157,10 @@ bool SetFreq(int sockfd, freq_t freq)
     char buf[BUFSIZE];
 
     sprintf (buf, "F %llu\n", freq);
-    Send(sockfd, buf);
-    Recv(sockfd, buf);
+    if (!Send(sockfd, buf))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
 
     if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
@@ -160,8 +186,10 @@ bool GetSignalLevel(int sockfd, double *dBFS)
 {
     char buf[BUFSIZE];
 
-    Send(sockfd, "l\n");
-    Recv(sockfd, buf);
+    if (!Send(sockfd, "l\n"))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
 
     if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
@@ -178,8 +206,10 @@ bool GetSquelchLevel(int sockfd, double *dBFS)
 {
     char buf[BUFSIZE];
 
-    Send(sockfd, "l SQL\n");
-    Recv(sockfd, buf);
+    if (!Send(sockfd, "l SQL\n"))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
 
     if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
@@ -195,8 +225,10 @@ bool SetSquelchLevel(int sockfd, double dBFS)
     char buf[BUFSIZE];
 
     sprintf (buf, "L SQL %f\n", dBFS);
-    Send(sockfd, buf);
-    Recv(sockfd, buf);
+    if (!Send(sockfd, buf))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
 
     if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
@@ -234,8 +266,10 @@ bool StartRecording(int sockfd)
 {
     char buf[BUFSIZE];
 
-    Send(sockfd, "U RECORD 1\n");
-    Recv(sockfd, buf);
+    if (!Send(sockfd, "U RECORD 1\n"))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
 
     if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
@@ -251,8 +285,10 @@ bool StopRecording(int sockfd)
 {
     char buf[BUFSIZE];
 
-    Send(sockfd, "U RECORD 0\n");
-    Recv(sockfd, buf);
+    if (!Send(sockfd, "U RECORD 0\n"))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
 
     if (strcmp(buf, "RPRT 1\n") == 0 )
         return false;
