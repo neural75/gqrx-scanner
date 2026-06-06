@@ -408,7 +408,9 @@ bool ParseInputOptions (int argc, char **argv)
                             printf ("Error: -%c: Invalid time(s)\n", c);
                             print_usage(argv[0]);
                         }
+#ifndef OSX
                         opt_max_probe  = probe * 1000;   // ms → µs
+#endif
                         opt_max_listen = hangup * 1000;
                     }
                     else
@@ -420,7 +422,9 @@ bool ParseInputOptions (int argc, char **argv)
                             print_usage(argv[0]);
                         }
                         opt_max_listen *= 1000;           // ms → µs
+#ifndef OSX
                         opt_max_probe = opt_max_listen;   // same value for probe
+#endif
                     }
                 }
             break;
@@ -808,6 +812,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         // Two-phase VOX timing:
         //   Phase 1 (probe)  — no voice heard yet → exit after probe_time
         //   Phase 2 (active) — voice seen → exit after hangup_time of silence
+#ifndef OSX
         if (opt_vox && level >= squelch)
         {
             long threshold = voice_was_detected ? opt_max_listen : opt_max_probe;
@@ -818,7 +823,9 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
                 skip = true;
             }
         }
-        else if (opt_max_listen != 0)
+        else
+#endif
+        if (opt_max_listen != 0)
         {
             // Non-VOX path: original listen-time cap
             if (opt_max_listen <= listen_time)
