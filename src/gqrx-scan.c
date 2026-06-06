@@ -781,8 +781,10 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         if (opt_max_listen != 0)
         {
             long limit = listen_time;
+#ifndef OSX
             if (opt_vox && level >= squelch)
                 limit = consecutive_silent * sleep;
+#endif
             if (opt_max_listen <= limit) {
                 exit = 1;
                 skip = true;
