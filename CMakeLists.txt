@@ -51,7 +51,7 @@ if(cmocka_FOUND)
     else()
         add_custom_target(check
             COMMAND ${CMAKE_CTEST_COMMAND} --verbose
-            DEPENDS unit_tests sweep_test
+            DEPENDS unit_tests sweep_test vad_test
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
     message(STATUS "cmocka found - tests enabled. Run 'make check' to build and test.")

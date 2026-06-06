@@ -33,6 +33,20 @@ set_tests_properties(unit_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 30)
 
+# VAD test executable (Linux only — requires pw-cat samples in tests/vox/)
+if(NOT APPLE)
+    add_executable(vad_test vad_test.c
+        ${CMAKE_SOURCE_DIR}/src/vox-lpc.c
+        ${CMAKE_SOURCE_DIR}/src/vox-vad.c)
+    target_include_directories(vad_test PRIVATE ${CMOCKA_INCLUDE_DIR})
+    target_link_libraries(vad_test PRIVATE ${CMOCKA_LIBRARY} m)
+
+    add_test(NAME vad_test COMMAND vad_test)
+    set_tests_properties(vad_test PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 10)
+endif()
+
 # Sweep integration test executable (Linux only — uses --wrap)
 if(NOT APPLE)
     add_executable(sweep_test

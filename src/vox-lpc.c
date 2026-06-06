@@ -462,7 +462,9 @@ double VoxLpcPredictionGain(double r0, double residual)
 
 double VoxLpcPitchStrength(const short *x, int N, int min_lag, int max_lag)
 {
-    if (N <= max_lag || min_lag < 1)
+    // Clamp max_lag so there are at least 32 samples for a stable correlation
+    int effective_max = (N - 32) < max_lag ? (N - 32) : max_lag;
+    if (effective_max < min_lag || min_lag < 1)
         return 0.0;
 
     // Energy at lag 0
@@ -475,7 +477,7 @@ double VoxLpcPitchStrength(const short *x, int N, int min_lag, int max_lag)
 
     // Search for strongest periodicity in the pitch range
     double max_corr = 0.0;
-    for (int lag = min_lag; lag <= max_lag; lag++)
+    for (int lag = min_lag; lag <= effective_max; lag++)
     {
         double rk = 0.0;
         for (int n = 0; n < N - lag; n++)

@@ -672,7 +672,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 {
     double    squelch;
     double  level;
-    long    sleep_time = 0, listen_time = 0, sleep = 100000; // 100 ms
+    long    sleep_time = 0, listen_time = 0, consecutive_silent = 0, sleep = 100000; // 100 ms
     long    vox_sample_time = 10000;  // 10 ms VOX audio capture window (µs)
     int     exit = 0;
     char    c;
@@ -752,27 +752,41 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 #ifndef OSX
         // Voice-activity detection — when --vox is active and the carrier
         // is present, poll for fresh audio with a vox_sample_time window.
-        // If real audio (non-silence) is detected we undo the listen_time
-        // and sleep_time increments so only silent-carrier time is counted.
+        // If voice is detected we reset both the listen_time and the
+        // consecutive-silence counter, so the frequency stays active.
+        // On silence we only increment the consecutive-silence counter.
         if (opt_vox && level >= squelch)
         {
             if (VoxAudioHasSignal(vox_sample_time))
             {
                 listen_time = 0;
+                consecutive_silent = 0;
                 sleep_time = 0;
             }
-            else if (!VoxAudioIsAlive())
+            else
             {
-                fprintf(stderr, "[ WARNING ] Audio capture pipe closed. "
-                        "Disabling VOX.\n");
-                opt_vox = false;
+                consecutive_silent++;
+                if (!VoxAudioIsAlive())
+                {
+                    fprintf(stderr, "[ WARNING ] Audio capture pipe closed. "
+                            "Disabling VOX.\n");
+                    opt_vox = false;
+                }
             }
         }
 #endif
 
-        if (opt_max_listen != 0 && opt_max_listen <= listen_time) {
-            exit = 1;
-            skip = true;
+        // Use consecutive-silence counter for VOX timing, fallback to
+        // cumulative listen_time otherwise (e.g. non-VOX mode).
+        if (opt_max_listen != 0)
+        {
+            long limit = listen_time;
+            if (opt_vox && level >= squelch)
+                limit = consecutive_silent * sleep;
+            if (opt_max_listen <= limit) {
+                exit = 1;
+                skip = true;
+            }
         }
 
         // exit = 0

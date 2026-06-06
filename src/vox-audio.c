@@ -357,23 +357,82 @@ void VoxAudioPrintStats(const short *buf, int nsamples, long threshold)
 }
 
 //
+// VoxProcessFrame — Process a single 128-sample frame through the VAD
+// pipeline.
+//
+// Computes pitch strength, ZC, and band-energy difference, then runs
+// the pitch-based VAD decision.  Returns true if the frame is VOICE.
+//
+static bool VoxProcessFrame(short *frame, int nsamples, int idx, int total)
+{
+    double pitch_strength = VoxLpcPitchStrength(frame, nsamples, 20, 400);
+    double ZC = VoxLpcZeroCrossings(frame, nsamples);
+
+    double r0 = 0.0;
+    for (int i = 0; i < nsamples; i++)
+        r0 += (double)frame[i] * (double)frame[i];
+
+    double r_low[13];
+    r_low[0] = r0;
+    for (int k = 1; k <= 12; k++)
+    {
+        r_low[k] = 0.0;
+        for (int i = 0; i < nsamples - k; i++)
+            r_low[k] += (double)frame[i] * (double)frame[i + k];
+    }
+
+    double Ef = VoxLpcFullBandEnergy(r0, nsamples);
+    double El = VoxLpcLowBandEnergy(r_low, 12, nsamples);
+    double El_minus_Ef = El - Ef;
+
+    VoxVADFeatures feat;
+    feat.pitch_strength = pitch_strength;
+    feat.ZC = ZC;
+    feat.El_minus_Ef = El_minus_Ef;
+
+    bool decision = VoxVADUpdate(&g_vad_state, &feat);
+
+    if (opt_verbose)
+    {
+        int score = (pitch_strength > 0.35 ? 2 : 0)
+                  + (ZC > 0.55 ? 1 : 0)
+                  + (ZC < 0.12 ? 1 : 0)
+                  + (El_minus_Ef > 4.0 ? 1 : 0);
+
+        fprintf(stderr, "vox:   frame=%2d/%d pitch=%.3f ZC=%.3f"
+                " El-Ef=%.1f score=%d cons=%d hang=%d -> %s\n",
+                idx, total,
+                pitch_strength, ZC, El_minus_Ef,
+                score,
+                g_vad_state.consecutive_pitch_frames,
+                g_vad_state.hangover,
+                decision ? "VOICE" : "silence");
+    }
+
+    return decision;
+}
+
+//
 // VoxAudioHasSignal(sample_time_us)
 //   1. Guard: if the pipe is closed or known dead, return false.
-//   2. Sample: poll() with caller's timeout, read one buffer chunk
-//      (256 bytes = 128 s16 samples).
-//   3. Compute amplitude-invariant features:
-//        pitch strength (max norm autocorr at 50-400 Hz lags)
-//        zero-crossing rate
-//        band-energy difference (low-band minus full-band)
-//   4. Run VoxVADUpdate() — pitch-based 4-criteria VAD.
+//   2. Sample: poll() with caller's timeout.
+//   3. Drain: read ALL available audio from the pipe (up to 32 frames).
+//   4. Process each complete 128-sample frame through VoxProcessFrame().
+//   5. Return true if ANY frame is classified as VOICE.
 //
-//   The caller must call VoxAudioFlush() once before entering the
-//   detection loop for a new frequency, so stale data does not pollute
-//   the measurement.
+// Draining the full pipe in one call lets the VAD run at its designed
+// 16 ms frame granularity independent of the caller's 100 ms loop
+// interval.  This prevents false-positive hiss frames from sustaining
+// the VOX decision across iterations.
+//
+// The caller must call VoxAudioFlush() once before entering the
+// detection loop for a new frequency, so stale data does not pollute
+// the measurement.
 //
 bool VoxAudioHasSignal(long sample_time_us)
 {
-    short buf[128];   // 128 s16 samples = 256 bytes
+    // Reusable buffer — 4096 s16 samples = 8192 bytes ≈ 32 frames
+    static short buf[4096];
     struct pollfd pfd = { .fd = audio_fd, .events = POLLIN };
 
     // ------ Initialise VAD state once ------
@@ -402,84 +461,40 @@ bool VoxAudioHasSignal(long sample_time_us)
         }
     }
 
-    // ------ Read fresh chunk ------
-    ssize_t n = read(audio_fd, buf, sizeof(buf));
-    if (opt_verbose)
-        fprintf(stderr, "vox: read %zd bytes\n", n);
-    if (n <= 0)
+    // ------ Drain all available data (non-blocking) ------
+    ssize_t total = 0;
+    while (total < (ssize_t)sizeof(buf))
     {
-        if (opt_verbose)
-            fprintf(stderr, "vox: read EOF/error (pipe_dead=%d)\n", n == 0);
-        if (n == 0)
-            pipe_dead = true;
+        ssize_t n = read(audio_fd, (char *)buf + total,
+                         sizeof(buf) - (size_t)total);
+        if (n <= 0)
+        {
+            if (n == 0)
+                pipe_dead = true;
+            break;
+        }
+        total += n;
+    }
+
+    if (total <= 0)
         return false;
-    }
 
-    int nsamples = (int)(n / (ssize_t)sizeof(short));
-    if (nsamples < 2)
-        return false;
-
-    // ------ Compute features ------
-
-    // A. Basic energy stats (avg_dev, etc.)
-    VoxAudioStats stats;
-    VoxAudioComputeStats(buf, nsamples, &stats);
-
-    // B. Pitch periodicity (strongest indicator)
-    double pitch_strength = VoxLpcPitchStrength(buf, nsamples, 20, 160);
-
-    // C. Zero-crossing rate
-    double ZC = VoxLpcZeroCrossings(buf, nsamples);
-
-    // D. Band-energy difference (El - Ef) — gain-invariant
-    double r0 = 0.0;
-    for (int i = 0; i < nsamples; i++)
-        r0 += (double)buf[i] * (double)buf[i];
-
-    double r_low[13];
-    r_low[0] = r0;
-    for (int k = 1; k <= 12; k++)
-    {
-        r_low[k] = 0.0;
-        for (int i = 0; i < nsamples - k; i++)
-            r_low[k] += (double)buf[i] * (double)buf[i + k];
-    }
-
-    double Ef = VoxLpcFullBandEnergy(r0, nsamples);
-    double El = VoxLpcLowBandEnergy(r_low, 12, nsamples);
-    double El_minus_Ef = El - Ef;
-
-    // ------ Build feature vector & run VAD ------
-    VoxVADFeatures feat;
-    feat.pitch_strength = pitch_strength;
-    feat.ZC = ZC;
-    feat.El_minus_Ef = El_minus_Ef;
-
-    bool vad_decision = VoxVADUpdate(&g_vad_state, &feat);
-
-    // ------ Debug logging ------
     if (opt_verbose)
-    {
-        long corr_permille = stats.energy > 0
-                             ? stats.corr * 1000 / stats.energy
-                             : 0;
-        int score = (pitch_strength > 0.30 ? 2 : 0)
-                  + (ZC > 0.50 ? 1 : 0)
-                  + (ZC < 0.12 ? 1 : 0)
-                  + (El_minus_Ef > 4.0 ? 1 : 0);
+        fprintf(stderr, "vox: drained %zd bytes\n", total);
 
-        fprintf(stderr, "vox: dev=%ld pitch=%.3f ZC=%.3f El-Ef=%.1f"
-                " score=%d frame=%d hang=%d -> %s\n",
-                stats.avg_dev,
-                pitch_strength, ZC, El_minus_Ef,
-                score,
-                g_vad_state.frame_count,
-                g_vad_state.hangover,
-                vad_decision ? "VOICE" : "silence");
-        (void)corr_permille;
-    }
+    int nsamples = (int)(total / (ssize_t)sizeof(short));
+    int nframes  = nsamples / 128;
+    int valid    = 0;
 
-    return vad_decision;
+    for (int f = 0; f < nframes; f++)
+        if (VoxProcessFrame(buf + f * 128, 128, f + 1, nframes))
+            valid = 1;
+
+    if (opt_verbose)
+        fprintf(stderr, "vox: batch %d frames, any_voice=%d\n",
+                nframes, valid);
+
+    return (bool)valid;
 }
 
 // ---------------------------------------------------------------------------
