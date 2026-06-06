@@ -1,4 +1,4 @@
-#include "../gqrx-scan.h"
+#include "../src/gqrx-scan.h"
 #include "mocks/mock_socket.h"
 #include "sweep_parser.h"
 

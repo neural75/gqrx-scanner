@@ -1,22 +1,26 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.10.0)
 
 # Find cmocka
 find_package(cmocka REQUIRED)
 
 # Include directories
-include_directories(${CMAKE_SOURCE_DIR})
+include_directories(${CMAKE_SOURCE_DIR}/src)
 include_directories(${CMAKE_SOURCE_DIR}/tests/mocks)
 include_directories(${CMOCKA_INCLUDE_DIR})
 
 # Unit test executable (utility, protocol, filter, file ops)
 add_executable(unit_tests unit_tests.c
-    ${CMAKE_SOURCE_DIR}/gqrx-scan.c
-    ${CMAKE_SOURCE_DIR}/gqrx-prot.c)
+    ${CMAKE_SOURCE_DIR}/src/gqrx-scan.c
+    ${CMAKE_SOURCE_DIR}/src/gqrx-prot.c)
 target_compile_definitions(unit_tests PRIVATE TESTING_BUILD)
 
 if(NOT APPLE)
     target_compile_definitions(unit_tests PRIVATE HAVE_WRAP_SOCKET_MOCKS)
-    target_sources(unit_tests PRIVATE ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c)
+    target_sources(unit_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c
+        ${CMAKE_SOURCE_DIR}/src/vox-audio.c
+        ${CMAKE_SOURCE_DIR}/src/vox-lpc.c
+        ${CMAKE_SOURCE_DIR}/src/vox-vad.c)
     target_link_libraries(unit_tests PRIVATE
         -Wl,--wrap=write -Wl,--wrap=read -Wl,--wrap=socket
         -Wl,--wrap=gethostbyname -Wl,--wrap=connect)
@@ -29,6 +33,20 @@ set_tests_properties(unit_tests PROPERTIES
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     TIMEOUT 30)
 
+# VAD test executable (Linux only — requires pw-cat samples in tests/vox/)
+if(NOT APPLE)
+    add_executable(vad_test vad_test.c
+        ${CMAKE_SOURCE_DIR}/src/vox-lpc.c
+        ${CMAKE_SOURCE_DIR}/src/vox-vad.c)
+    target_include_directories(vad_test PRIVATE ${CMOCKA_INCLUDE_DIR})
+    target_link_libraries(vad_test PRIVATE ${CMOCKA_LIBRARY} m)
+
+    add_test(NAME vad_test COMMAND vad_test)
+    set_tests_properties(vad_test PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 10)
+endif()
+
 # Sweep integration test executable (Linux only — uses --wrap)
 if(NOT APPLE)
     add_executable(sweep_test
@@ -36,8 +54,11 @@ if(NOT APPLE)
         ${CMAKE_SOURCE_DIR}/tests/sweep_parser.c
         ${CMAKE_SOURCE_DIR}/tests/sweep_mock.c
         ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c
-        ${CMAKE_SOURCE_DIR}/gqrx-scan.c
-        ${CMAKE_SOURCE_DIR}/gqrx-prot.c)
+        ${CMAKE_SOURCE_DIR}/src/gqrx-scan.c
+        ${CMAKE_SOURCE_DIR}/src/gqrx-prot.c
+        ${CMAKE_SOURCE_DIR}/src/vox-audio.c
+        ${CMAKE_SOURCE_DIR}/src/vox-lpc.c
+        ${CMAKE_SOURCE_DIR}/src/vox-vad.c)
     target_compile_definitions(sweep_test PRIVATE TESTING_BUILD)
     target_link_libraries(sweep_test PRIVATE
         ${CMOCKA_LIBRARY} m

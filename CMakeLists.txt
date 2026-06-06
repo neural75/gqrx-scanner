@@ -1,17 +1,38 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.10.0)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(gqrx-scanner)
+
+# Default to Release build if CMAKE_BUILD_TYPE is not explicitly set.
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 # Set the output folder where your program will be created
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} CACHE PATH "Executable output path")
 set(LIBRARY_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} CACHE PATH "Library output path")
 
 # The following folder will be included
-include_directories("${PROJECT_SOURCE_DIR}")
-add_executable(gqrx-scanner ${PROJECT_SOURCE_DIR}/gqrx-scan.c ${PROJECT_SOURCE_DIR}/gqrx-prot.c)
+include_directories("${PROJECT_SOURCE_DIR}/src")
+
+set(VOX_SOURCES "")
+if(NOT APPLE)
+    list(APPEND VOX_SOURCES ${PROJECT_SOURCE_DIR}/src/vox-audio.c)
+    list(APPEND VOX_SOURCES ${PROJECT_SOURCE_DIR}/src/vox-lpc.c)
+    list(APPEND VOX_SOURCES ${PROJECT_SOURCE_DIR}/src/vox-vad.c)
+endif()
+
+add_executable(gqrx-scanner ${PROJECT_SOURCE_DIR}/src/gqrx-scan.c ${PROJECT_SOURCE_DIR}/src/gqrx-prot.c ${VOX_SOURCES})
 target_link_libraries(gqrx-scanner m)
+# Copy binary to bin/ for convenience (CI verify step expects it here)
+add_custom_command(TARGET gqrx-scanner POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        "$<TARGET_FILE:gqrx-scanner>"
+        "${CMAKE_BINARY_DIR}/gqrx-scanner"
+    COMMENT "Copying binary to ${CMAKE_BINARY_DIR}/")
 install (TARGETS gqrx-scanner DESTINATION bin)
+install (FILES ${PROJECT_SOURCE_DIR}/gqrx-scan-setup-audio-pw.sh DESTINATION bin RENAME gqrx-scan-setup-audio.sh
+    PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
 # uninstall target
 if(NOT TARGET uninstall)
     configure_file(
@@ -36,10 +57,20 @@ if(cmocka_FOUND)
     else()
         add_custom_target(check
             COMMAND ${CMAKE_CTEST_COMMAND} --verbose
-            DEPENDS unit_tests sweep_test
+            DEPENDS unit_tests sweep_test vad_test
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
     endif()
     message(STATUS "cmocka found - tests enabled. Run 'make check' to build and test.")
 else()
     message(STATUS "cmocka not found - tests disabled. Install libcmocka-dev to enable testing.")
 endif()
+
+# Convenience targets to switch build type and rebuild.
+add_custom_target(debug
+    COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug .
+    COMMAND ${CMAKE_MAKE_PROGRAM}
+    COMMENT "Switching to Debug build and rebuilding")
+add_custom_target(release
+    COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release .
+    COMMAND ${CMAKE_MAKE_PROGRAM}
+    COMMENT "Switching to Release build and rebuilding")

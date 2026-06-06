@@ -2,7 +2,7 @@
 #define _MOCK_SOCKET_H_
 
 #include <stdbool.h>
-#include "../../gqrx-prot.h"
+#include "../../src/gqrx-prot.h"
 
 #define MOCK_SOCKFD 42
 

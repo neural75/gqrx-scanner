@@ -1,0 +1,1 @@
+gqrx-scan-setup-audio-pw.sh

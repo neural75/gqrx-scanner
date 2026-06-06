@@ -62,6 +62,9 @@ SOFTWARE.
 #include <errno.h>
 #include "gqrx-prot.h"
 #include "gqrx-scan.h"
+#ifndef OSX
+#include "vox-audio.h"
+#endif
 
 #define NB_ENABLE    true
 #define NB_DISABLE   false
@@ -97,7 +100,6 @@ const freq_t    g_default_scan_bw   = 10000;   // default scan frequency steps (
 const freq_t    g_ban_tollerance    = 10000;   // +- 10Khz bandwidth to ban from current freq.
 const long      g_delay             = 2500000; // 2.5 sec in microseconds
 const char     *g_bookmarksfile     = "~/.config/gqrx/bookmarks.csv";
-//
 // Input options
 //
 char           *opt_hostname = NULL;
@@ -108,7 +110,7 @@ freq_t          opt_max_freq = 0;
 freq_t          opt_scan_bw = g_default_scan_bw;
 long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250 attempt to fix 'no delay argument given' stoppage on bookmark scan
 //LWVMOBILE: New variables inserted here
-long            opt_speed = 250000;
+long            opt_speed = 350000;
 long            opt_date = 0;
 //LWVMOBILE; End new variables.
 SCAN_MODE       opt_scan_mode = sweep;
@@ -119,6 +121,10 @@ long            opt_max_listen = 0;
 bool            opt_record = false;
 // only for debug
 bool            opt_verbose = false;
+
+#ifndef OSX
+bool            opt_vox = false;
+#endif
 
 #ifdef TESTING_BUILD
 int             g_testing_max_full_sweeps = -1;
@@ -155,8 +161,9 @@ void print_usage ( char *name )
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
     printf ("-l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0, no maximum\n");
-    printf ("-x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.\n");
-    printf ("                               If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed\n");
+    printf ("-x, --speed <time>           Time in milliseconds for bookmark scan settle delay.\n");
+    printf ("                               Default: 350 milliseconds.\n");
+    printf ("                               If scan lands on wrong bookmark during search, increase this value.\n");
     printf ("-y  --date                   Date Format, default is 0.\n");
     printf ("                               0 = mm-dd-yy\n");
     printf ("                               1 = dd-mm-yy\n");
@@ -165,6 +172,11 @@ void print_usage ( char *name )
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
     printf ("                               Works only with -m bookmark scan mode\n");
     printf ("-r, --record                  Enable recording of detected signals\n");
+#ifndef OSX
+    printf ("--vox                         Enable voice-activity detection (Linux only).\n");
+    printf ("                               Requires: gqrx-scan-setup-audio.sh attach\n");
+    printf ("                               When active, -l becomes max silence timeout.\n");
+#endif
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");
     printf ("\n");
@@ -234,12 +246,15 @@ bool ParseInputOptions (int argc, char **argv)
           {"date",    required_argument, 0, 'y'},
           {"max-listen",       required_argument, 0, 'l'},
           {"record", no_argument, 0, 'r'},
+#ifndef OSX
+          {"vox",    no_argument, 0, 'V'},
+#endif
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:l:r",
+        c = getopt_long (argc, argv, "vVwh:p:m:f:b:e:s:t:d:x:y:l:r",
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -444,6 +459,11 @@ bool ParseInputOptions (int argc, char **argv)
             case 'r':
                 opt_record = true;
                 break;
+#ifndef OSX
+            case 'V':
+                opt_vox = true;
+                break;
+#endif
             case '?':
             /* getopt_long already printed an error message. */
             case ':':
@@ -566,14 +586,14 @@ time_t DiffTime(char *timestamp, time_t start_time)
 
     if (ltime->tm_mday > 1)
     {
-          char days[10];
-          sprintf(days, "%2d days ", ltime->tm_mday);
+          char days[32];
+          snprintf(days, sizeof(days), "%2d days ", ltime->tm_mday);
           strcat(timestamp, days);
     }
     if (ltime->tm_hour > (int)(ltime->tm_gmtoff/3600))
     {
-          char hours[10];
-          sprintf(hours, "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
+          char hours[16];
+          snprintf(hours, sizeof(hours), "%2.2d:", (int)(ltime->tm_hour - (ltime->tm_gmtoff/3600)) );
           strcat(timestamp, hours);
     }
 
@@ -652,7 +672,8 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
 {
     double    squelch;
     double  level;
-    long    sleep_time = 0, listen_time = 0, sleep = 100000; // 100 ms
+    long    sleep_time = 0, listen_time = 0, consecutive_silent = 0, sleep = 100000; // 100 ms
+    long    vox_sample_time = 10000;  // 10 ms VOX audio capture window (µs)
     int     exit = 0;
     char    c;
     bool    skip = false;
@@ -664,6 +685,13 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     fpurge(stdin);
 #endif
     nonblock(NB_ENABLE);
+
+#ifndef OSX
+    // Flush stale audio left in the pipe from the previous frequency,
+    // so VoxAudioHasSignal() only measures this frequency's audio.
+    if (opt_vox)
+        VoxAudioFlush();
+#endif
 
     do
     {
@@ -720,9 +748,47 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         }
 
         listen_time += sleep;
-        if (opt_max_listen != 0 && opt_max_listen <= listen_time) {
-            exit = 1;
-            skip = true;
+
+#ifndef OSX
+        // Voice-activity detection — when --vox is active and the carrier
+        // is present, poll for fresh audio with a vox_sample_time window.
+        // If voice is detected we reset both the listen_time and the
+        // consecutive-silence counter, so the frequency stays active.
+        // On silence we only increment the consecutive-silence counter.
+        if (opt_vox && level >= squelch)
+        {
+            if (VoxAudioHasSignal(vox_sample_time))
+            {
+                listen_time = 0;
+                consecutive_silent = 0;
+                sleep_time = 0;
+            }
+            else
+            {
+                consecutive_silent++;
+                if (!VoxAudioIsAlive())
+                {
+                    fprintf(stderr, "[ WARNING ] Audio capture pipe closed. "
+                            "Disabling VOX.\n");
+                    opt_vox = false;
+                }
+            }
+        }
+#endif
+
+        // Use consecutive-silence counter for VOX timing, fallback to
+        // cumulative listen_time otherwise (e.g. non-VOX mode).
+        if (opt_max_listen != 0)
+        {
+            long limit = listen_time;
+#ifndef OSX
+            if (opt_vox && level >= squelch)
+                limit = consecutive_silent * sleep;
+#endif
+            if (opt_max_listen <= limit) {
+                exit = 1;
+                skip = true;
+            }
         }
 
         // exit = 0
@@ -924,10 +990,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     // Found a bookmark in the range
                     SetFreq(sockfd, current_freq);
                     GetSquelchLevel(sockfd, &squelch);
-                    //usleep((skip)?sleep_cycle_active:sleep_cyle_saved);       //LWVMOBILE: Perhaps place a small sleep here of 1000ms, slow scan to prevent 'slipping' issue in bookmark search.
-                    //usleep((skip)?slow_scan_cycle:slow_cycle_saved);          //LWVMOBILE: Find a way to implement these variables as a command line option -s 'slow scan' and input time in milli-seconds.
-                    usleep((skip)?slow_scan_cycle:opt_speed);                   //LWVMOBILE: Using new variable set by default and also by user switch. Seems to work. GJ ME.
-                    // LWVMOBILE: Scan stoppage due to no delay argument given has been fixed, was a variable set way too high.
+                    usleep((skip) ? slow_scan_cycle : opt_speed);
                     GetSignalLevelEx(sockfd, &level, 5 );
                     if (level >= squelch)
                     {
@@ -1502,6 +1565,9 @@ void SetOptDefaults(void)
     opt_date     = 0;
     opt_record   = false;
     opt_verbose  = false;
+#ifndef OSX
+    opt_vox      = false;
+#endif
 #ifdef TESTING_BUILD
     g_testing_sweep_full_count = 0;
     g_testing_max_full_sweeps = -1;
@@ -1541,6 +1607,27 @@ int main(int argc, char **argv) {
     opt_port     = g_portno;
     opt_delay    = g_delay;
     ParseInputOptions(argc, argv);
+
+#ifndef OSX
+    if (opt_vox)
+    {
+        if (opt_max_listen == 0)
+        {
+            fprintf(stderr, "Error: --vox requires -l/--max-listen.\n"
+                    "       -l sets the silence timeout: how long to wait after\n"
+                    "       someone stops talking before moving to the next\n"
+                    "       frequency.\n"
+                    "       Example: -l 3000 for 3 seconds of silence.\n");
+            print_usage(argv[0]);
+        }
+        if (!VoxAudioInit())
+        {
+            fprintf(stderr, "[ WARNING ] VOX disabled. "
+                    "Run 'gqrx-scan-setup-audio.sh attach' to enable audio capture.\n");
+            opt_vox = false;
+        }
+    }
+#endif
 
     // post validating
     if (opt_tag_search && (opt_scan_mode == sweep) )
@@ -1643,6 +1730,9 @@ int main(int argc, char **argv) {
     if (bookmarksfd) fclose(bookmarksfd);
     close(sockfd);
     FreeFrequencies();
+#ifndef OSX
+    VoxAudioShutdown();
+#endif
     return 0;
 }
 #endif /* TESTING_BUILD */
