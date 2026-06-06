@@ -1,7 +1,12 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.10.0)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(gqrx-scanner)
+
+# Default to Release build if CMAKE_BUILD_TYPE is not explicitly set.
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
 # Set the output folder where your program will be created
 set(CMAKE_BINARY_DIR ${CMAKE_SOURCE_DIR}/bin)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE} CACHE PATH "Executable output path")
@@ -13,6 +18,8 @@ include_directories("${PROJECT_SOURCE_DIR}/src")
 set(VOX_SOURCES "")
 if(NOT APPLE)
     list(APPEND VOX_SOURCES ${PROJECT_SOURCE_DIR}/src/vox-audio.c)
+    list(APPEND VOX_SOURCES ${PROJECT_SOURCE_DIR}/src/vox-lpc.c)
+    list(APPEND VOX_SOURCES ${PROJECT_SOURCE_DIR}/src/vox-vad.c)
 endif()
 
 add_executable(gqrx-scanner ${PROJECT_SOURCE_DIR}/src/gqrx-scan.c ${PROJECT_SOURCE_DIR}/src/gqrx-prot.c ${VOX_SOURCES})
@@ -51,3 +58,13 @@ if(cmocka_FOUND)
 else()
     message(STATUS "cmocka not found - tests disabled. Install libcmocka-dev to enable testing.")
 endif()
+
+# Convenience targets to switch build type and rebuild.
+add_custom_target(debug
+    COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Debug .
+    COMMAND ${CMAKE_MAKE_PROGRAM}
+    COMMENT "Switching to Debug build and rebuilding")
+add_custom_target(release
+    COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release .
+    COMMAND ${CMAKE_MAKE_PROGRAM}
+    COMMENT "Switching to Release build and rebuilding")

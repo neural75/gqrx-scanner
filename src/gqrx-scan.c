@@ -62,6 +62,9 @@ SOFTWARE.
 #include <errno.h>
 #include "gqrx-prot.h"
 #include "gqrx-scan.h"
+#ifndef OSX
+#include "vox-audio.h"
+#endif
 
 #define NB_ENABLE    true
 #define NB_DISABLE   false
@@ -120,6 +123,10 @@ bool            opt_record = false;
 // only for debug
 bool            opt_verbose = false;
 
+#ifndef OSX
+bool            opt_vox = false;
+#endif
+
 #ifdef TESTING_BUILD
 int             g_testing_max_full_sweeps = -1;
 int             g_testing_sweep_full_count = 0;
@@ -165,6 +172,11 @@ void print_usage ( char *name )
     printf ("                               tags are case insensitive and match also for partial string contained in a tag\n");
     printf ("                               Works only with -m bookmark scan mode\n");
     printf ("-r, --record                  Enable recording of detected signals\n");
+#ifndef OSX
+    printf ("--vox                         Enable voice-activity detection (Linux only).\n");
+    printf ("                               Requires: gqrx-scan-setup-audio.sh attach\n");
+    printf ("                               When active, -l becomes max silence timeout.\n");
+#endif
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");
     printf ("\n");
@@ -234,12 +246,15 @@ bool ParseInputOptions (int argc, char **argv)
           {"date",    required_argument, 0, 'y'},
           {"max-listen",       required_argument, 0, 'l'},
           {"record", no_argument, 0, 'r'},
+#ifndef OSX
+          {"vox",    no_argument, 0, 'V'},
+#endif
           {0, 0, 0, 0}
         };
         /* getopt_long stores the option index here. */
         int option_index = 0;
 
-        c = getopt_long (argc, argv, "vwh:p:m:f:b:e:s:t:d:x:y:l:r",
+        c = getopt_long (argc, argv, "vVwh:p:m:f:b:e:s:t:d:x:y:l:r",
                         long_options, &option_index);
 
         // warning: I don't know why but required argument are not so "required"
@@ -444,6 +459,11 @@ bool ParseInputOptions (int argc, char **argv)
             case 'r':
                 opt_record = true;
                 break;
+#ifndef OSX
+            case 'V':
+                opt_vox = true;
+                break;
+#endif
             case '?':
             /* getopt_long already printed an error message. */
             case ':':
@@ -653,6 +673,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     double    squelch;
     double  level;
     long    sleep_time = 0, listen_time = 0, sleep = 100000; // 100 ms
+    long    vox_sample_time = 10000;  // 10 ms VOX audio capture window (µs)
     int     exit = 0;
     char    c;
     bool    skip = false;
@@ -664,6 +685,13 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     fpurge(stdin);
 #endif
     nonblock(NB_ENABLE);
+
+#ifndef OSX
+    // Flush stale audio left in the pipe from the previous frequency,
+    // so VoxAudioHasSignal() only measures this frequency's audio.
+    if (opt_vox)
+        VoxAudioFlush();
+#endif
 
     do
     {
@@ -720,6 +748,28 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         }
 
         listen_time += sleep;
+
+#ifndef OSX
+        // Voice-activity detection — when --vox is active and the carrier
+        // is present, poll for fresh audio with a vox_sample_time window.
+        // If real audio (non-silence) is detected we undo the listen_time
+        // and sleep_time increments so only silent-carrier time is counted.
+        if (opt_vox && level >= squelch)
+        {
+            if (VoxAudioHasSignal(vox_sample_time))
+            {
+                listen_time = 0;
+                sleep_time = 0;
+            }
+            else if (!VoxAudioIsAlive())
+            {
+                fprintf(stderr, "[ WARNING ] Audio capture pipe closed. "
+                        "Disabling VOX.\n");
+                opt_vox = false;
+            }
+        }
+#endif
+
         if (opt_max_listen != 0 && opt_max_listen <= listen_time) {
             exit = 1;
             skip = true;
@@ -1502,6 +1552,9 @@ void SetOptDefaults(void)
     opt_date     = 0;
     opt_record   = false;
     opt_verbose  = false;
+#ifndef OSX
+    opt_vox      = false;
+#endif
 #ifdef TESTING_BUILD
     g_testing_sweep_full_count = 0;
     g_testing_max_full_sweeps = -1;
@@ -1541,6 +1594,27 @@ int main(int argc, char **argv) {
     opt_port     = g_portno;
     opt_delay    = g_delay;
     ParseInputOptions(argc, argv);
+
+#ifndef OSX
+    if (opt_vox)
+    {
+        if (opt_max_listen == 0)
+        {
+            fprintf(stderr, "Error: --vox requires -l/--max-listen.\n"
+                    "       -l sets the silence timeout: how long to wait after\n"
+                    "       someone stops talking before moving to the next\n"
+                    "       frequency.\n"
+                    "       Example: -l 3000 for 3 seconds of silence.\n");
+            print_usage(argv[0]);
+        }
+        if (!VoxAudioInit())
+        {
+            fprintf(stderr, "[ WARNING ] VOX disabled. "
+                    "Run 'gqrx-scan-setup-audio.sh attach' to enable audio capture.\n");
+            opt_vox = false;
+        }
+    }
+#endif
 
     // post validating
     if (opt_tag_search && (opt_scan_mode == sweep) )
@@ -1643,6 +1717,9 @@ int main(int argc, char **argv) {
     if (bookmarksfd) fclose(bookmarksfd);
     close(sockfd);
     FreeFrequencies();
+#ifndef OSX
+    VoxAudioShutdown();
+#endif
     return 0;
 }
 #endif /* TESTING_BUILD */

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.10.0)
 
 # Find cmocka
 find_package(cmocka REQUIRED)
@@ -16,7 +16,11 @@ target_compile_definitions(unit_tests PRIVATE TESTING_BUILD)
 
 if(NOT APPLE)
     target_compile_definitions(unit_tests PRIVATE HAVE_WRAP_SOCKET_MOCKS)
-    target_sources(unit_tests PRIVATE ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c)
+    target_sources(unit_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c
+        ${CMAKE_SOURCE_DIR}/src/vox-audio.c
+        ${CMAKE_SOURCE_DIR}/src/vox-lpc.c
+        ${CMAKE_SOURCE_DIR}/src/vox-vad.c)
     target_link_libraries(unit_tests PRIVATE
         -Wl,--wrap=write -Wl,--wrap=read -Wl,--wrap=socket
         -Wl,--wrap=gethostbyname -Wl,--wrap=connect)
@@ -37,7 +41,10 @@ if(NOT APPLE)
         ${CMAKE_SOURCE_DIR}/tests/sweep_mock.c
         ${CMAKE_SOURCE_DIR}/tests/mocks/mock_socket.c
         ${CMAKE_SOURCE_DIR}/src/gqrx-scan.c
-        ${CMAKE_SOURCE_DIR}/src/gqrx-prot.c)
+        ${CMAKE_SOURCE_DIR}/src/gqrx-prot.c
+        ${CMAKE_SOURCE_DIR}/src/vox-audio.c
+        ${CMAKE_SOURCE_DIR}/src/vox-lpc.c
+        ${CMAKE_SOURCE_DIR}/src/vox-vad.c)
     target_compile_definitions(sweep_test PRIVATE TESTING_BUILD)
     target_link_libraries(sweep_test PRIVATE
         ${CMOCKA_LIBRARY} m

@@ -4,6 +4,9 @@
 #include "gqrx-prot.h"
 #include <stdio.h>
 #include <stdbool.h>
+#ifndef OSX
+#include "vox-audio.h"
+#endif
 
 /* Frequency entry — used in Frequencies[], SavedFrequencies[], BannedFrequencies[] */
 typedef struct {
@@ -39,6 +42,9 @@ extern long      opt_date;
 extern SCAN_MODE opt_scan_mode;
 extern bool      opt_record;
 extern bool      opt_verbose;
+#ifndef OSX
+extern bool      opt_vox;
+#endif
 
 /* Functions */
 extern bool   LoadFrequencies(FILE *bookmarksfd);
