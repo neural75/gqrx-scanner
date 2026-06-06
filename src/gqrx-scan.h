@@ -44,6 +44,7 @@ extern bool      opt_record;
 extern bool      opt_verbose;
 #ifndef OSX
 extern bool      opt_vox;
+extern long      opt_max_probe;
 #endif
 
 /* Functions */

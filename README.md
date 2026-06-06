@@ -47,7 +47,7 @@ gqrx-scanner
 		[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
 		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
 		[-d|--delay <lingering time in milliseconds>]
-		[-l|--max-listen <maximum listening time in milliseconds>]
+		[-l|--max-listen <[probe_time:]hangup_time>]
 		[-t|--tags <"tag1|tag2|...">]
 		[-v|--verbose]
 		[-r|--record]
@@ -63,8 +63,11 @@ gqrx-scanner
 -e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f
 -s, --step <freq>            Frequency step <freq> in Hz. Default: 10000
 -d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000
--l, --max-listen <time>      Maximum time to listen (ms). In VOX mode, max silence before closing.
-                               Default 0, no maximum
+-l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0 (no limit).
+                               With --vox, use -l [probe_time:]hangup_time
+                               probe_time (ms): Time to wait for voice on a new carrier.
+                               hangup_time (ms): Time to wait after voice drops.
+                               Example: --vox -l 1000:5000
 -x, --speed <time>           Time in milliseconds for bookmark scan speed. Default 250 milliseconds.
                                If scan lands on wrong bookmark during search, use -x 500 (ms) to slow down speed
 -y  --date                   Date Format, default is 0.
@@ -77,7 +80,7 @@ gqrx-scanner
 -r, --record                 Enable recording of detected signals
 -v, --verbose                Output more information during scan (used for debug). Default: false
 --vox                        Enable voice activity detection. Requires PipeWire + pw-cat
-                               (see "Voice Activity Detection" section).
+                               Uses -l [probe_time:]hangup_time — see -l help.
 --help                       This help message.
 
 ```
@@ -97,8 +100,16 @@ These keyboard shortcuts are available during scan:
 *MacOSX is not supported* due to the lack of a portable audio interception method.
 
 VOX uses PipeWire to capture the receiver's audio produced by an
-arbitrary demodulator program and detect voice, leveraging the listen
-option (-l) as a max silence timeout.
+arbitrary demodulator program and detect speech, decoupling the
+listen timer from the carrier state.  The `-l` option accepts two
+values separated by a colon:
+
+- **probe_time**: how long to wait for voice on a new carrier before
+  skipping (short, e.g. 1000ms)
+- **hangup_time**: how long to wait after voice stops before moving on
+  (long, e.g. 5000ms)
+
+A single value sets both to the same time (backward compatible).
 
 On digital modes like DMR the carrier is always present even when no
 voice channel is active, so the traditional squelch-based approach
@@ -107,11 +118,11 @@ solves this by analyzing the demodulated audio for actual speech.
 
 Without VOX, the scanner listens to any signal that opens the squelch
 (noise, hum, interference) for the full -l duration.  With VOX, the
-pitch-based voice detector resets the listen timer when speech is
-detected, so active conversations hold the frequency past the -l
-limit.  Silence counting means -l becomes "max silence before moving
-on" rather than "max total listen time" — the scanner leaves quiet
-frequencies quickly and stays on busy ones.
+pitch-based voice detector extends the listening window indefinitely
+as long as speech is detected.  When speech stops, the hangup_time
+counts down before the scanner moves on.  Frequencies with a carrier
+but no voice (digital modes, noise) skip after probe_time expires,
+allowing fast scanning without cutting off real conversations.
 
 ### Audio interception (gqrx-scan-setup-audio.sh)
 
@@ -140,9 +151,15 @@ Audio now flows: app → null sink → (speakers + scanner capture)
 
 3. Run the scanner with VOX:
    ```
+   ./gqrx-scanner --vox -l 1000:5000
+   ```
+   (probe for voice 1s on new carriers, hang 5s after voice stops)
+
+   For backward compatibility, a single value sets both:
+   ```
    ./gqrx-scanner --vox -l 5000
    ```
-   (stays open on voice, breaks after 5s of silence)
+   (probe and hangup both 5s — same as 5000:5000)
 
 4. Clean up when done:
    ```
@@ -182,9 +199,9 @@ Performs a sweep scan from frequency 430MHz to 431MHz, using a delay of	3 secs a
 ```
 <br>
 
-VOX bookmark scan with 5s silence timeout, searching only DMR frequencies (see "Voice Activity Detection (VOX)" section for setup):
+VOX bookmark scan with 1s probe and 5s hangup, searching only DMR frequencies (see "Voice Activity Detection (VOX)" section for setup):
 ```
-./gqrx-scanner -m bookmark --vox -l 5000 --tags "DMR"
+./gqrx-scanner -m bookmark --vox -l 1000:5000 --tags "DMR"
 ```
 
 ### Sample output

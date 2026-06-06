@@ -124,6 +124,7 @@ bool            opt_verbose = false;
 
 #ifndef OSX
 bool            opt_vox = false;
+long            opt_max_probe = 0;
 #endif
 
 #ifdef TESTING_BUILD
@@ -145,7 +146,7 @@ void print_usage ( char *name )
     printf ("%s\n\t\t[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]\n", name);
     printf ("\t\t[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]\n");
     printf ("\t\t[-d|--delay <lingering time in milliseconds>]\n");
-    printf ("\t\t[-l|--max-listen <maximum listening time in milliseconds>]\n");
+    printf ("\t\t[-l|--max-listen <[probe_time:]hangup_time>]\n");
     printf ("\t\t[-t|--tags <\"tag1|tag2|...\">]\n");
     printf ("\t\t[-v|--verbose]\n");
     printf ("\t\t[-r|--record]\n");
@@ -160,7 +161,12 @@ void print_usage ( char *name )
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
     printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
-    printf ("-l, --max-listen <time>      Maximum time to listen to an active frequency. Default 0, no maximum\n");
+    printf ("-l, --max-listen <time>\n");
+    printf ("                               Maximum time to listen to an active frequency. Default 0 (no limit).\n");
+    printf ("                               With --vox, use -l [probe_time:]hangup_time\n");
+    printf ("                               probe_time (ms): Time to wait for voice on a new carrier.\n");
+    printf ("                               hangup_time (ms): Time to wait after voice drops.\n");
+    printf ("                               Example: --vox -l 1000:5000\n");
     printf ("-x, --speed <time>           Time in milliseconds for bookmark scan settle delay.\n");
     printf ("                               Default: 350 milliseconds.\n");
     printf ("                               If scan lands on wrong bookmark during search, increase this value.\n");
@@ -175,7 +181,7 @@ void print_usage ( char *name )
 #ifndef OSX
     printf ("--vox                         Enable voice-activity detection (Linux only).\n");
     printf ("                               Requires: gqrx-scan-setup-audio.sh attach\n");
-    printf ("                               When active, -l becomes max silence timeout.\n");
+    printf ("                               Uses -l [probe_time:]hangup_time — see -l help.\n");
 #endif
     printf ("-v, --verbose                Output more information during scan (used for debug). Default: false\n");
     printf ("--help                       This help message.\n");
@@ -389,13 +395,34 @@ bool ParseInputOptions (int argc, char **argv)
                     printf ("Error: -%c: option requires an argument\n", c);
                     print_usage(argv[0]);
                 }
-
-                if ((opt_max_listen = atol(optarg)) == 0)
                 {
-                    printf ("Error: -%c: Invalid time\n", c);
-                    print_usage(argv[0]);
+                    char *colon = strchr(optarg, ':');
+                    if (colon)
+                    {
+                        // Format: "probe_time:hangup_time"
+                        *colon = '\0';
+                        long probe = atol(optarg);
+                        long hangup = atol(colon + 1);
+                        if (probe <= 0 || hangup <= 0)
+                        {
+                            printf ("Error: -%c: Invalid time(s)\n", c);
+                            print_usage(argv[0]);
+                        }
+                        opt_max_probe  = probe * 1000;   // ms → µs
+                        opt_max_listen = hangup * 1000;
+                    }
+                    else
+                    {
+                        // Single value — both probe and hangup
+                        if ((opt_max_listen = atol(optarg)) == 0)
+                        {
+                            printf ("Error: -%c: Invalid time\n", c);
+                            print_usage(argv[0]);
+                        }
+                        opt_max_listen *= 1000;           // ms → µs
+                        opt_max_probe = opt_max_listen;   // same value for probe
+                    }
                 }
-                opt_max_listen *= 1000; // in microsec
             break;
 
             case 'x':
@@ -678,6 +705,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
     char    c;
     bool    skip = false;
     bool    pause = false;
+    bool    voice_was_detected = false;
 
 #ifndef OSX
     __fpurge(stdin);
@@ -759,6 +787,7 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         {
             if (VoxAudioHasSignal(vox_sample_time))
             {
+                voice_was_detected = true;
                 listen_time = 0;
                 consecutive_silent = 0;
                 sleep_time = 0;
@@ -776,16 +805,24 @@ bool WaitUserInputOrDelay (int sockfd, long delay, freq_t *current_freq)
         }
 #endif
 
-        // Use consecutive-silence counter for VOX timing, fallback to
-        // cumulative listen_time otherwise (e.g. non-VOX mode).
-        if (opt_max_listen != 0)
+        // Two-phase VOX timing:
+        //   Phase 1 (probe)  — no voice heard yet → exit after probe_time
+        //   Phase 2 (active) — voice seen → exit after hangup_time of silence
+        if (opt_vox && level >= squelch)
         {
-            long limit = listen_time;
-#ifndef OSX
-            if (opt_vox && level >= squelch)
-                limit = consecutive_silent * sleep;
-#endif
-            if (opt_max_listen <= limit) {
+            long threshold = voice_was_detected ? opt_max_listen : opt_max_probe;
+            long limit = voice_was_detected ? consecutive_silent * sleep : listen_time;
+            if (threshold > 0 && limit >= threshold)
+            {
+                exit = 1;
+                skip = true;
+            }
+        }
+        else if (opt_max_listen != 0)
+        {
+            // Non-VOX path: original listen-time cap
+            if (opt_max_listen <= listen_time)
+            {
                 exit = 1;
                 skip = true;
             }
@@ -991,6 +1028,7 @@ bool ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_m
                     SetFreq(sockfd, current_freq);
                     GetSquelchLevel(sockfd, &squelch);
                     usleep((skip) ? slow_scan_cycle : opt_speed);
+                    skip = false;   // settle already applied — don't carry forward to next bookmarks
                     GetSignalLevelEx(sockfd, &level, 5 );
                     if (level >= squelch)
                     {
@@ -1567,6 +1605,7 @@ void SetOptDefaults(void)
     opt_verbose  = false;
 #ifndef OSX
     opt_vox      = false;
+    opt_max_probe = 0;
 #endif
 #ifdef TESTING_BUILD
     g_testing_sweep_full_count = 0;
