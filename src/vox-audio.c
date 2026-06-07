@@ -66,6 +66,20 @@ static VoxVADState g_vad_state;
 static bool g_vad_inited = false;
 
 // ---------------------------------------------------------------------------
+// PW_CAT_COMMAND — the PipeWire capture command shared by VoxAudioInit() and
+// VoxAudioRestart().  Must be a single string literal for popen().
+// ---------------------------------------------------------------------------
+#define PW_CAT_COMMAND \
+    "pw-cat --record " \
+    "-P '{\"stream.capture.sink\":true," \
+    "\"target.object\":\"gqrx-scanner-intercept\"," \
+    "\"node.name\":\"gqrx-scanner\"," \
+    "\"application.name\":\"gqrx-scanner\"," \
+    "\"application.id\":\"com.github.neural75.gqrx-scanner\"}' " \
+    "--channels=1 --format=s16 --rate=8000 " \
+    "--raw - 2>/dev/null"
+
+// ---------------------------------------------------------------------------
 // Primary implementation — PipeWire (pw-cat)
 //
 // Dependency: pipewire-bin (pw-cat, pw-cli, pw-link, pw-loopback)
@@ -160,14 +174,7 @@ bool VoxAudioInit(void)
     //   when PipeWire is not running).  We detect failure via fread()
     //   returning 0/EOF instead.
     //
-    audio_fp = popen("pw-cat --record "
-                     "-P '{\"stream.capture.sink\":true,"
-                     "\"target.object\":\"gqrx-scanner-intercept\","
-                     "\"node.name\":\"gqrx-scanner\","
-                     "\"application.name\":\"gqrx-scanner\","
-                     "\"application.id\":\"com.github.neural75.gqrx-scanner\"}' "
-                     "--channels=1 --format=s16 --rate=8000 "
-                     "--raw - 2>/dev/null", "r");
+    audio_fp = popen(PW_CAT_COMMAND, "r");
     if (audio_fp == NULL)
     {
         fprintf(stderr, "[ ERROR ] Failed to start audio capture: %s\n"
@@ -195,6 +202,69 @@ bool VoxAudioInit(void)
 fail_sig:
     sigaction(SIGPIPE, &old_sa, NULL);
     return false;
+}
+
+
+//
+// VoxAudioRestart
+//   One-shot pw-cat restart after the pipe dies.  Closes the old pipe,
+//   spawns a new pw-cat, and re-initializes the VAD state so stale noise
+//   estimates do not carry over.
+//
+//   SIGPIPE is NOT touched — it was already set to SIG_IGN by
+//   VoxAudioInit() and must remain so for the lifetime of the process.
+//
+//   Returns true if the new pw-cat started successfully.
+//   Returns false on failure — the caller should disable VOX.
+//
+bool VoxAudioRestart(void)
+{
+    int rc;
+
+    // Nothing to restart if the pipe was never opened.
+    if (audio_fp == NULL)
+        return false;
+
+    // Close the old pipe and reap the child.  Log the exit status so the
+    // user can diagnose why pw-cat died (e.g. detach, crash, OOM).
+    audio_fd = -1;
+    pipe_dead = false;
+    rc = pclose(audio_fp);
+    audio_fp = NULL;
+
+    if (rc != 0)
+    {
+        fprintf(stderr, "[ WARNING ] Audio capture exited unexpectedly on restart");
+        if (WIFEXITED(rc))
+            fprintf(stderr, " (status %d)", WEXITSTATUS(rc));
+        if (WIFSIGNALED(rc))
+            fprintf(stderr, " (signal %d)", WTERMSIG(rc));
+        fprintf(stderr, ".\n");
+    }
+
+    // Spawn a new pw-cat.
+    audio_fp = popen(PW_CAT_COMMAND, "r");
+    if (audio_fp == NULL)
+    {
+        fprintf(stderr, "[ ERROR ] Failed to restart audio capture: %s\n"
+                "         Make sure PipeWire is running and "
+                "gqrx-scan-setup-audio.sh is attached.\n",
+                strerror(errno));
+        return false;
+    }
+
+    // Reconfigure pipe: unbuffer stdio, non-blocking reads.
+    setvbuf(audio_fp, NULL, _IONBF, 0);
+    audio_fd = fileno(audio_fp);
+    fcntl(audio_fd, F_SETFL, fcntl(audio_fd, F_GETFL) | O_NONBLOCK);
+    pipe_dead = false;
+
+    // Re-initialise the VAD state machine so stale noise-floor estimates
+    // from the dead pipe do not carry over into the new capture session.
+    VoxVADInit(&g_vad_state);
+    g_vad_inited = true;
+
+    return true;
 }
 
 void VoxAudioShutdown(void)

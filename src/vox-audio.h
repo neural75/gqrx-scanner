@@ -133,4 +133,18 @@ bool VoxAudioHasSignal(long sample_time_us);
 //
 bool VoxAudioIsAlive(void);
 
+//
+// VoxAudioRestart
+//   One-shot restart of the pw-cat capture pipe after it dies (e.g. pipe
+//   closed, pw-cat crashed, or detach cleanup killed it).  Closes the old
+//   pipe and spawns a new pw-cat.  The VAD state machine is re-initialised
+//   so stale noise estimates do not carry over.
+//
+//   Returns true if the new pw-cat started successfully.
+//   Returns false on failure — caller should disable VOX permanently.
+//
+//   Safe to call only after a successful VoxAudioInit().  Not thread-safe.
+//
+bool VoxAudioRestart(void);
+
 #endif
