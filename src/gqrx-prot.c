@@ -110,6 +110,7 @@ bool Send(int sockfd, char *buf)
     if (n < 0)
     {
         fprintf(stderr, "Warning: write to socket failed: %s\n", strerror(errno));
+        g_socket_dead = true;
         return false;
     }
     return true;
@@ -126,6 +127,7 @@ bool Recv(int sockfd, char *buf)
     if (n < 0)
     {
         fprintf(stderr, "Warning: read from socket failed: %s\n", strerror(errno));
+        g_socket_dead = true;
         buf[0] = '\0';
         return false;
     }
@@ -180,6 +182,43 @@ bool SetFreq(int sockfd, freq_t freq)
             return true;
         usleep(1000);
     }
+}
+
+//
+// SetModulationAndBandwidth
+// Sends "M <modulation> <bandwidth>" to Gqrx to set the demodulator mode
+// and filter bandwidth on the current VFO.
+// Returns false if the send/recv fails or Gqrx reports an error (RPRT != 0).
+// The caller is responsible for ensuring modulation and bandwidth strings
+// are valid per the Gqrx remote protocol (e.g. "FM", "9000").
+//
+bool SetModulationAndBandwidth (int sockfd, char *modulation, char *bandwidth)
+{
+    char buf[BUFSIZE];
+    size_t count = sizeof(mode_table) / sizeof(mode_table_entry_t);
+    int i;
+
+    for (i = 0; i < count; i++)
+    {
+        if( strcmp(mode_table[i].mode_descr, modulation) == 0)
+            break;
+    }
+    if (i >= count)
+    {
+        fprintf(stderr, "Warning: invalid modulation '%s'\n", modulation);
+        return false;
+    }
+
+    snprintf(buf, BUFSIZE, "M %s %s\n", mode_table[i].mode_id, bandwidth);
+    if (!Send(sockfd, buf))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
+
+    if (strcmp(buf, "RPRT 1\n") == 0)
+        return false;
+
+    return true;
 }
 
 bool GetSignalLevel(int sockfd, double *dBFS)

@@ -33,6 +33,41 @@ SOFTWARE.
 
 typedef unsigned long long freq_t;
 
+// Demodulator mode table
+// Used to convert from GQRX's mode strings in bookmarks to protocol internal mode values
+// Keep this in sync with the values returned by telnet localhost 7356 -> "M ?\n"
+// Current values are: OFF RAW AM AMS LSB USB CWL CWR CWU CW FM WFM WFM_ST WFM_ST_OIRT
+typedef struct {
+    char *mode_id;
+    char *mode_descr;
+} mode_table_entry_t;
+
+static const mode_table_entry_t mode_table[] = {
+    { "OFF", "Demod Off" },
+    { "RAW", "Raw I/Q" },
+    { "AM",  "AM" },
+    { "AMS", "AM-Sync" },
+    { "LSB", "LSB" },
+    { "USB", "USB" },
+    { "CWL", "CW-L" },
+    { "CWR", "CW-R" },
+    { "CWU", "CW-U" },
+    { "FM",  "Narrow FM" },
+    { "WFM",  "WFM (mono)" },
+    { "WFM_ST",  "WFM (stereo)" },
+    { "WFM_ST_OIRT",  "WFM (oirt)" }
+};
+
+
+//
+// Global socket descriptor — used by all protocol functions.
+// Set to -1 initially; assigned by Connect() in main.
+// When a send/recv timeout occurs (broken connection after suspend),
+// g_socket_dead is set to true and the scan loop calls Reconnect()
+// to obtain a fresh descriptor.
+//
+extern int   g_sockfd;
+extern bool  g_socket_dead;
 
 //
 // error - wrapper for perror
@@ -59,6 +94,7 @@ bool Recv(int sockfd, char *buf);
 //
 bool GetCurrentFreq(int sockfd, freq_t *freq);
 bool SetFreq(int sockfd, freq_t freq);
+bool SetModulationAndBandwidth (int sockfd, char *modulation, char *bandwidth);
 bool GetSignalLevel(int sockfd, double *dBFS);
 bool GetSquelchLevel(int sockfd, double *dBFS);
 bool SetSquelchLevel(int sockfd, double dBFS);

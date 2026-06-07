@@ -14,6 +14,8 @@ typedef struct {
     int count;
     int miss;
     char descr[BUFSIZE];
+    char modulation[BUFSIZE]; 
+    char bandwidth[BUFSIZE];  
     char *tags[TAG_MAX];
     int   tag_max;
 } FREQ;
@@ -57,8 +59,8 @@ extern bool   BanFreq(freq_t freq_current);
 extern bool   IsBannedFreq(freq_t *freq_current);
 extern void   ClearAllBans(void);
 extern freq_t FilterFrequency(int idx);
-extern bool   ScanFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max, freq_t freq_interval);
-extern bool   ScanBookmarkedFrequenciesInRange(int sockfd, freq_t freq_min, freq_t freq_max);
+extern bool   ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interval);
+extern bool   ScanBookmarkedFrequenciesInRange(freq_t freq_min, freq_t freq_max);
 
 /* Global state management */
 void SetOptDefaults(void);

@@ -467,10 +467,34 @@ double VoxLpcPitchStrength(const short *x, int N, int min_lag, int max_lag)
     if (effective_max < min_lag || min_lag < 1)
         return 0.0;
 
-    // Energy at lag 0
+    //
+    // Remove the per-frame DC offset before computing autocorrelation.
+    //
+    // Without this step a large DC bias (e.g. from a recording with a
+    // non-zero mean, or from open-squelch static) causes every lag's
+    // cross-correlation to equal approximately r[0] because:
+    //
+    //   r[k] = Σ x[n]·x[n+k]  ≈  N·DC²   (the DC² term dominates)
+    //
+    // This makes r[k]/r[0] ≈ 1.0 for all k regardless of any actual
+    // periodicity, producing a false pitch_strength close to 1.0 and
+    // triggering false VOICE decisions throughout the signal.
+    //
+    // Per-frame mean subtraction is the standard pre-processing step
+    // in G.729B and other speech codecs for exactly this reason.
+    //
+    double mean = 0.0;
+    for (int n = 0; n < N; n++)
+        mean += (double)x[n];
+    mean /= (double)N;
+
+    // Energy at lag 0 using DC-removed samples
     double r0 = 0.0;
     for (int n = 0; n < N; n++)
-        r0 += (double)x[n] * (double)x[n];
+    {
+        double s = (double)x[n] - mean;
+        r0 += s * s;
+    }
 
     if (r0 <= 0.0)
         return 0.0;
@@ -481,7 +505,7 @@ double VoxLpcPitchStrength(const short *x, int N, int min_lag, int max_lag)
     {
         double rk = 0.0;
         for (int n = 0; n < N - lag; n++)
-            rk += (double)x[n] * (double)x[n + lag];
+            rk += ((double)x[n] - mean) * ((double)x[n + lag] - mean);
 
         double corr = rk / r0;
         if (corr > max_corr)

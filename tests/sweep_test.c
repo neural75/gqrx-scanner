@@ -137,6 +137,7 @@ static void run_sweep_test(const char *profile_path)
 
     int sockfd = Connect("localhost", 7356);
     assert_int_equal(sockfd, MOCK_SOCKFD);
+    g_sockfd = sockfd;
 
 #ifdef TESTING_BUILD
     g_testing_max_full_sweeps = 2;
@@ -148,8 +149,7 @@ static void run_sweep_test(const char *profile_path)
     assert_int_equal(dup2(pipefd[1], STDOUT_FILENO), STDOUT_FILENO);
     close(pipefd[1]);
 
-    ScanFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq,
-                           opt_scan_bw);
+    ScanFrequenciesInRange(opt_min_freq, opt_max_freq, opt_scan_bw);
     fflush(stdout);
 
     dup2(old_stdout, STDOUT_FILENO);
@@ -280,6 +280,7 @@ static void run_bookmark_test(const char *profile_path,
 
     int sockfd = Connect("localhost", 7356);
     assert_int_equal(sockfd, MOCK_SOCKFD);
+    g_sockfd = sockfd;
 
 #ifdef TESTING_BUILD
     g_testing_max_bookmark_loops = n_loops;
@@ -291,7 +292,7 @@ static void run_bookmark_test(const char *profile_path,
     assert_int_equal(dup2(pipefd[1], STDOUT_FILENO), STDOUT_FILENO);
     close(pipefd[1]);
 
-    ScanBookmarkedFrequenciesInRange(sockfd, opt_min_freq, opt_max_freq);
+    ScanBookmarkedFrequenciesInRange(opt_min_freq, opt_max_freq);
     fflush(stdout);
 
     dup2(old_stdout, STDOUT_FILENO);

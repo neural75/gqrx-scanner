@@ -21,7 +21,7 @@ void VoxVADInit(VoxVADState *s)
 //
 //  #  Criterion                     Weight
 // ——————————————————————————————————————————
-//  1  pitch_strength > 0.35         +2 (requires 3+ consecutive frames)
+//  1  pitch_strength > 0.35         +2 (requires 2+ consecutive frames)
 //  2  ZC > 0.55                     +1
 //  3  ZC < 0.12                     +1
 //  4  El_minus_Ef > 4.0 dB          +1
@@ -30,11 +30,19 @@ void VoxVADInit(VoxVADState *s)
 //
 // Pitch-sustain: an isolated receiver-hiss frame with pitch 0.35–0.43
 // does NOT count toward the score.  The +2 pitch weight only applies
-// when pitch_strength exceeds threshold on 3+ consecutive frames.
+// when pitch_strength exceeds threshold on 2+ consecutive frames.
 // Receiver hiss usually produces isolated false positives spaced
 // > 200 ms apart, so the sustain requirement eliminates them without
 // affecting real speech (which fires pitch on nearly every voiced
 // frame).
+//
+// The consecutive requirement is 2 (not 3) because VoxLpcPitchStrength
+// now subtracts the per-frame mean before computing autocorrelation.
+// This removes the DC-offset false-positive path (static noise with a
+// large DC bias was previously classified as pitch) but also reduces
+// the absolute pitch_strength of real voice slightly; requiring 2
+// consecutive frames instead of 3 restores sensitivity without
+// reintroducing DC false positives.
 //
 // Hangover: retains VOICE for up to VOX_HANGOVER frames after criteria
 // drop below threshold, to avoid clipping syllable endings.  With 16 ms
@@ -57,7 +65,8 @@ bool VoxVADUpdate(VoxVADState *s, const VoxVADFeatures *feat)
 
     // Criterion 1: Pitch periodicity — requires 2+ consecutive frames
     // to avoid false positives from receiver-hiss periodic structure.
-    if (s->consecutive_pitch_frames >= 3)
+    // (See comment above for why this was changed from 3 to 2.)
+    if (s->consecutive_pitch_frames >= 2)
         score += 2;
 
     // Criterion 2: High ZC — unvoiced (e.g. fricatives)
