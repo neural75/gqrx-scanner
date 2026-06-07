@@ -124,19 +124,28 @@ counts down before the scanner moves on.  Frequencies with a carrier
 but no voice (digital modes, noise) skip after probe_time expires,
 allowing fast scanning without cutting off real conversations.
 
-### Audio interception (gqrx-scan-setup-audio.sh)
+### Audio interception
 
-The script creates a virtual null sink that intercepts your app's
-audio, duplicating it so the scanner can analyze it for voice without
-muting the speakers:
+By default, `pw-cat --record` captures from the **default audio monitor**
+(all audio played through the speakers).  No setup script is needed:
+
+```
+./gqrx-scanner --vox -l 1000:5000
+```
+
+If you run other audio sources (music, notifications, etc.) that could
+falsely trigger VOX, the `gqrx-scan-setup-audio.sh` script isolates just
+your demodulator's audio.  It creates a virtual null sink that
+intercepts the app's audio, duplicating it so the scanner can analyze
+it for voice without muting the speakers:
 
   1. Creates a virtual "null sink" (gqrx-scanner-intercept)
   2. Redirects your demodulator (DSD, GQRX, etc.) to this null sink
   3. Sets up a loopback from the null sink back to your speakers
 
-Audio now flows: app → null sink → (speakers + scanner capture)
+Audio flow: app → null sink → (speakers + scanner capture)
 
-### Usage
+### Using the interceptor script
 
 1. Find your demodulator's name:
    ```
@@ -155,11 +164,10 @@ Audio now flows: app → null sink → (speakers + scanner capture)
    ```
    (probe for voice 1s on new carriers, hang 5s after voice stops)
 
-   For backward compatibility, a single value sets both:
+   A single value sets both probe and hangup:
    ```
    ./gqrx-scanner --vox -l 5000
    ```
-   (probe and hangup both 5s — same as 5000:5000)
 
 4. Clean up when done:
    ```

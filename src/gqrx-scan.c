@@ -834,18 +834,15 @@ bool WaitUserInputOrDelay (long delay, freq_t *current_freq)
                 consecutive_silent++;
                 if (!VoxAudioIsAlive())
                 {
-                    // One-shot restart of the pw-cat pipe.  If this is the
-                    // first time the pipe has died, try to respawn pw-cat.
-                    // If that fails (or a restart was already attempted),
+                    // Try to respawn pw-cat.  If the pipe cannot be
+                    // opened (pw-cat missing, PipeWire down) then
                     // disable VOX permanently for this scan.
-                    static bool vox_restart_attempted = false;
-                    if (vox_restart_attempted || !VoxAudioRestart())
+                    if (!VoxAudioRestart())
                     {
                         fprintf(stderr, "[ WARNING ] Audio capture pipe closed. "
                                 "Disabling VOX.\n");
                         opt_vox = false;
                     }
-                    vox_restart_attempted = true;
                 }
             }
         }
