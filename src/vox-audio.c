@@ -79,6 +79,34 @@ static bool g_vad_inited = false;
     "--channels=1 --format=s16 --rate=8000 " \
     "--raw - 2>/dev/null"
 
+
+//
+// open_capture_pipe
+//   Open the pw-cat capture pipe (popen) and configure it for non-blocking
+//   reads, unbuffered stdio.  Shared by VoxAudioInit() and VoxAudioRestart().
+//
+//   Returns true on success.  On failure prints an error and returns false
+//   without closing anything (caller must clean up if needed).
+//
+static bool open_capture_pipe(void)
+{
+    audio_fp = popen(PW_CAT_COMMAND, "r");
+    if (audio_fp == NULL)
+        return false;
+
+    // Unbuffer stdio so fileno() stays in sync with the kernel pipe fd.
+    setvbuf(audio_fp, NULL, _IONBF, 0);
+
+    // Get the raw fd for poll() / read(), and make it non-blocking so
+    // that our timed poll()+read() loop never blocks.
+    audio_fd = fileno(audio_fp);
+    fcntl(audio_fd, F_SETFL, fcntl(audio_fd, F_GETFL) | O_NONBLOCK);
+    pipe_dead = false;
+
+    return true;
+}
+
+
 // ---------------------------------------------------------------------------
 // Primary implementation — PipeWire (pw-cat)
 //
@@ -174,23 +202,13 @@ bool VoxAudioInit(void)
     //   when PipeWire is not running).  We detect failure via fread()
     //   returning 0/EOF instead.
     //
-    audio_fp = popen(PW_CAT_COMMAND, "r");
-    if (audio_fp == NULL)
+    if (!open_capture_pipe())
     {
         fprintf(stderr, "[ ERROR ] Failed to start audio capture: %s\n"
                 "         Make sure to run 'gqrx-scan-setup-audio.sh attach <app>' before starting gqrx-scanner.'\n",
                 strerror(errno));
         goto fail_sig;
     }
-
-    // Unbuffer stdio so fileno() stays in sync with the kernel pipe fd.
-    setvbuf(audio_fp, NULL, _IONBF, 0);
-
-    // Get the raw fd for poll() / read(), and make it non-blocking so
-    // that our timed poll()+read() loop never blocks.
-    audio_fd = fileno(audio_fp);
-    fcntl(audio_fd, F_SETFL, fcntl(audio_fd, F_GETFL) | O_NONBLOCK);
-    pipe_dead = false;
 
     return true;
 
@@ -242,9 +260,8 @@ bool VoxAudioRestart(void)
         fprintf(stderr, ".\n");
     }
 
-    // Spawn a new pw-cat.
-    audio_fp = popen(PW_CAT_COMMAND, "r");
-    if (audio_fp == NULL)
+    // Spawn a new pw-cat and reconfigure the pipe.
+    if (!open_capture_pipe())
     {
         fprintf(stderr, "[ ERROR ] Failed to restart audio capture: %s\n"
                 "         Make sure PipeWire is running and "
@@ -252,12 +269,6 @@ bool VoxAudioRestart(void)
                 strerror(errno));
         return false;
     }
-
-    // Reconfigure pipe: unbuffer stdio, non-blocking reads.
-    setvbuf(audio_fp, NULL, _IONBF, 0);
-    audio_fd = fileno(audio_fp);
-    fcntl(audio_fd, F_SETFL, fcntl(audio_fd, F_GETFL) | O_NONBLOCK);
-    pipe_dead = false;
 
     // Re-initialise the VAD state machine so stale noise-floor estimates
     // from the dead pipe do not carry over into the new capture session.
