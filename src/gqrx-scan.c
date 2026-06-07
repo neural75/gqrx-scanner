@@ -88,6 +88,8 @@ int  SavedFreq_Max = 0;
 FREQ BannedFrequencies[SAVED_FREQ_MAX] = {0};
 int  BannedFreq_Max = 0;
 
+unsigned long g_settle_time_us = 500000; // default 500ms, auto-calibrated
+
 static char freq_string[BUFSIZE] = {0};
 
 
@@ -164,7 +166,7 @@ void print_usage ( char *name )
     printf ("-b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f\n");
     printf ("-e, --max <freq>             Frequency range ends with this <freq> in Hz. Incompatible with -f\n");
     printf ("-s, --step <freq>            Frequency step <freq> in Hz. Default: %llu\n", g_default_scan_bw);
-    printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2000\n");
+    printf ("-d, --delay <time>           Lingering time in milliseconds before the scanner reactivates. Default 2500\n");
     printf ("-l, --max-listen <time>\n");
     printf ("                               Maximum time to listen to an active frequency. Default 0 (no limit).\n");
     printf ("                               With --vox, use -l [probe_time:]hangup_time\n");
@@ -1087,7 +1089,7 @@ bool ScanBookmarkedFrequenciesInRange(freq_t freq_min, freq_t freq_max)
                     GetSquelchLevel(g_sockfd, &squelch);
                     usleep((skip) ? slow_scan_cycle : opt_speed);
                     skip = false;   // settle already applied — don't carry forward to next bookmarks
-                    GetSignalLevelEx(g_sockfd, &level, 5 );
+                    GetSignalLevelEx(g_sockfd, &level, 5, false);
                     if (level >= squelch)
                     {
                         if (opt_record)
@@ -1246,17 +1248,33 @@ bool IsBannedFreq (freq_t *freq_current)
 
 //
 // Debounce
+// Waits 300 ms then re-checks the signal level to distinguish a real
+// carrier from a transient noise spike that briefly opened the squelch.
 //
+// A 3 dB hysteresis margin (DEBOUNCE_HYSTERESIS_DB) is applied so that
+// a marginal carrier sitting only a couple of dB above the squelch level
+// is not rejected by a momentary natural fluctuation.  Without this
+// margin, the 300 ms sleep gives enough time for a weak-but-real carrier
+// to dip below squelch and trigger an unnecessary backtrack loop.
+//
+// Only a true signal loss (level drops more than 3 dB below squelch)
+// returns false.
+//
+#define DEBOUNCE_HYSTERESIS_DB 3.0
+
 bool Debounce (freq_t current_freq, double level)
 {
     double current_level = level;
     double squelch;
     usleep(300000); // 300 ms wait, hope it's good enough
-    GetSignalLevelEx( g_sockfd, &current_level, 5 );
+    GetSignalLevelEx( g_sockfd, &current_level, 5, false );
     GetSquelchLevel ( g_sockfd, &squelch );
 
-    if (current_level < squelch )
-        return false; // signal lost or ghost
+    // Apply hysteresis: allow the signal to dip up to DEBOUNCE_HYSTERESIS_DB
+    // below squelch before declaring it lost.  This prevents the backtrack
+    // oscillation loop caused by marginal carriers fluctuating ±2-3 dB.
+    if (current_level < squelch - DEBOUNCE_HYSTERESIS_DB)
+        return false; // signal genuinely lost or ghost
     else
         return true;
 
@@ -1264,21 +1282,39 @@ bool Debounce (freq_t current_freq, double level)
 
 //
 // BacktrackFrequency
-// got a signal but lost it
-// move back to find it again more slowly
+// Got a signal but lost it — move back to find it again more slowly.
 //
+// Probes numberOfIntervals steps backward from current_freq, records
+// signal levels, then tries each above-squelch candidate (sorted by
+// level descending) with a full 150 ms settle + GetSignalLevelEx
+// recheck using DEBOUNCE_HYSTERESIS_DB margin.  The peak-picker
+// ensures the strongest candidate is tried first; if its recheck
+// fails (e.g. the peak was a settle artifact from an adjacent strong
+// carrier), the next-best candidate is tried as a fallback.
 //
-freq_t BacktrackFrequency(freq_t current_freq, freq_t freq_interval, int numberOfIntervals, freq_t freq_min, freq_t freq_max)
+// Returns:
+//   true  — *out_freq and *out_level are set to the verified values.
+//   false — no candidate passed recheck; *out_freq is the last
+//           probed position (for continuing the sweep).
+//
+bool BacktrackFrequency(freq_t current_freq, freq_t freq_interval,
+                        int numberOfIntervals, freq_t freq_min,
+                        freq_t freq_max,
+                        freq_t *out_freq, double *out_level)
 {
     double squelch = 0;
     double level = 0;
     double level_trace[numberOfIntervals];
     freq_t freq_trace[numberOfIntervals];
+    bool   above_trace[numberOfIntervals];
     int i;
     int n = 2;
     int original_max = numberOfIntervals;
     int effective_max = original_max;
 
+    //
+    // Probe phase: scan backward and record levels per step
+    //
     for (i = 0; i < effective_max; i++)
     {
         current_freq -= freq_interval;
@@ -1286,31 +1322,105 @@ freq_t BacktrackFrequency(freq_t current_freq, freq_t freq_interval, int numberO
             current_freq = freq_max - freq_interval;
         GetSquelchLevel(g_sockfd, &squelch);
         SetFreq(g_sockfd, current_freq);
-        usleep(150000);
-        GetSignalLevelEx(g_sockfd, &level, 5);
+        GetSignalLevelEx(g_sockfd, &level, 5, true);
         level_trace[i] = level;
         freq_trace[i]  = current_freq;
+        above_trace[i] = (level >= squelch);
+        if (opt_verbose)
+        {
+            printf("[BACKTRACK] probe[%d] freq=%s level=%.2f squelch=%.2f (%s)\n",
+                   i, print_freq(current_freq), level, squelch,
+                   above_trace[i] ? "above" : "below");
+            fflush(stdout);
+        }
+
         if (level >= squelch)
         {
+            // Signal found — scan n=2 more steps to map the full plateau
+            // so the peak-picker can centre on it rather than returning
+            // the leading edge.
             if ((original_max - i) > n)
                 effective_max = i + n;
         }
     }
 
-    int peak = 0;
-    double maxLevel = -999.0;
+    //
+    // Collect above-squelch candidate indices
+    //
+    int candidate_indices[numberOfIntervals];
+    int n_candidates = 0;
     for (i = 0; i < effective_max; i++)
     {
-        if (level_trace[i] > maxLevel)
+        if (above_trace[i])
         {
-            maxLevel = level_trace[i];
-            peak = i;
+            candidate_indices[n_candidates++] = i;
         }
     }
-    if (maxLevel >= squelch)
-        return freq_trace[peak];
-    else
-        return current_freq;
+
+    if (n_candidates == 0)
+    {
+        if (opt_verbose)
+            printf("[BACKTRACK] no above-squelch readings found\n");
+        *out_freq = current_freq;
+        return false;
+    }
+
+    //
+    // A single above-squelch candidate is accepted only when its level is
+    // significantly above squelch (>= 5 dB margin).  This avoids locking
+    // onto marginal noise spikes while allowing narrow carriers (≈10 kHz
+    // bandwidth with 10 kHz probe spacing) to pass through.
+    //
+    #define BACKTRACK_MIN_MARGIN_DB 5.0
+
+    if (n_candidates == 1)
+    {
+        int ci = candidate_indices[0];
+        if (level_trace[ci] < squelch + BACKTRACK_MIN_MARGIN_DB)
+        {
+            if (opt_verbose)
+                printf("[BACKTRACK] only 1 above-squelch candidate (%.1f dBFS, %.0f dB above squelch, need >= %.0f) — rejecting\n",
+                       level_trace[ci], level_trace[ci] - squelch, BACKTRACK_MIN_MARGIN_DB);
+            *out_freq = current_freq;
+            return false;
+        }
+        if (opt_verbose)
+            printf("[BACKTRACK] single above-squelch candidate at %s (%.1f dBFS, %.0f dB above squelch) — accepted\n",
+                   print_freq(freq_trace[ci]), level_trace[ci], level_trace[ci] - squelch);
+    }
+
+    //
+    // Sort candidate indices by level descending (insertion sort)
+    //
+    for (i = 1; i < n_candidates; i++)
+    {
+        int key = candidate_indices[i];
+        double key_level = level_trace[key];
+        int j = i - 1;
+        while (j >= 0 && level_trace[candidate_indices[j]] < key_level)
+        {
+            candidate_indices[j + 1] = candidate_indices[j];
+            j--;
+        }
+        candidate_indices[j + 1] = key;
+    }
+
+    if (opt_verbose)
+    {
+        printf("[BACKTRACK] peak at %s level=%.2f (%d above-squelch candidate(s))\n",
+               print_freq(freq_trace[candidate_indices[0]]),
+               level_trace[candidate_indices[0]],
+               n_candidates);
+        fflush(stdout);
+    }
+
+    // Return the best above-squelch candidate from the probe phase.
+    // AdjustFrequency and the Debounce path in the caller handle
+    // fine-tuning and signal persistence verification.
+    int ci = candidate_indices[0];
+    *out_freq = freq_trace[ci];
+    *out_level = level_trace[ci];
+    return true;
 }
 // AdjustFrequency
 // Fine tuning to reach max level
@@ -1337,8 +1447,7 @@ freq_t AdjustFrequency(freq_t current_freq, freq_t freq_interval)
     for (current_freq = freq_min; current_freq <= freq_max; current_freq += freq_steps)
     {
         SetFreq(g_sockfd, current_freq);
-        usleep(150000);
-        GetSignalLevelEx(g_sockfd, &level, 5);
+        GetSignalLevelEx(g_sockfd, &level, 5, true);
         levels[l].level = level;
         levels[l].freq  = current_freq;
         l++;
@@ -1358,7 +1467,8 @@ freq_t AdjustFrequency(freq_t current_freq, freq_t freq_interval)
     l = start + (end - start) / 2;
     current_freq = levels[l].freq;
     SetFreq(g_sockfd, current_freq);
-    usleep(150000);
+    double reference_level;
+    GetSignalLevelEx(g_sockfd, &reference_level, 5, true);
 
     // Saved frequency check (unchanged)
     freq_t tolerance = 7000;
@@ -1380,13 +1490,11 @@ freq_t AdjustFrequency(freq_t current_freq, freq_t freq_interval)
     if (found)
     {
         SetFreq(g_sockfd, current_freq);
-        usleep(150000);
+        GetSignalLevelEx(g_sockfd, &reference_level, 5, true);
         return levels[l].freq;   // keep your original behaviour
     }
 
     // Second pass – fine tuning ±5 kHz with 1 kHz steps
-    double reference_level;
-    GetSignalLevelEx(g_sockfd, &reference_level, 5);
     freq_t reference_freq = current_freq;
     freq_min = current_freq - 5000;
     freq_max = current_freq + 5000;
@@ -1400,8 +1508,7 @@ freq_t AdjustFrequency(freq_t current_freq, freq_t freq_interval)
     for (current_freq = reference_freq + freq_steps; current_freq <= freq_max; current_freq += freq_steps)
     {
         SetFreq(g_sockfd, current_freq);
-        usleep(150000);
-        GetSignalLevelEx(g_sockfd, &level, 5);
+        GetSignalLevelEx(g_sockfd, &level, 5, true);
         if (level < reference_level)
             break;   // keep your original early exit
         levels2[l].level = level;
@@ -1412,8 +1519,7 @@ freq_t AdjustFrequency(freq_t current_freq, freq_t freq_interval)
     for (current_freq = reference_freq - freq_steps; current_freq >= freq_min; current_freq -= freq_steps)
     {
         SetFreq(g_sockfd, current_freq);
-        usleep(150000);
-        GetSignalLevelEx(g_sockfd, &level, 5);
+        GetSignalLevelEx(g_sockfd, &level, 5, true);
         if (level < reference_level)
             break;
         levels2[l].level = level;
@@ -1552,7 +1658,7 @@ bool ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interv
                 usleep((skip)?sleep_cycle_active:sleep_cyle);
 
             GetSquelchLevel(g_sockfd, &squelch);
-            GetSignalLevelEx(g_sockfd, &level, 5 );
+            GetSignalLevelEx(g_sockfd, &level, 5, false);
 
             if (opt_verbose)
             {
@@ -1578,26 +1684,28 @@ bool ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interv
                         fflush (stdout);
                     }
                     // tries to recover to get back the signal, check our steps...
-                    if (!saved_cycle)
+                    //
+                    // Always attempt to backtrack and find the source of the
+                    // signal, regardless of saved-frequency proximity.  The
+                    // full probe ensures we don't miss new or shifted signals.
                     {
-                        freq_t backtrack_freq = BacktrackFrequency(current_freq, freq_interval, 4, freq_min, freq_max);
-                        // Verify the backtrack frequency with a proper settle
-                        SetFreq(g_sockfd, backtrack_freq);
-                        usleep(150000);  // long settle to get stable level
-                        double check_level;
-                        double check_squelch;
-                        GetSignalLevelEx(g_sockfd, &check_level, 5);
-                        GetSquelchLevel(g_sockfd, &check_squelch);
-                        if (check_level >= check_squelch)
+                        freq_t backtrack_freq;
+                        double bt_level;
+                        if (BacktrackFrequency(current_freq, freq_interval, 4,
+                                               freq_min, freq_max,
+                                               &backtrack_freq, &bt_level))
                         {
-                            // Backtrack found a valid carrier – treat it as a new acquisition
                             current_freq = backtrack_freq;
-                            level = check_level;
-                            squelch = check_squelch;
+                            level       = bt_level;
                             goto carrier_acquired;
                         }
                         else
                         {
+                            if (opt_verbose)
+                            {
+                                printf("[BACKTRACK] all candidates rejected — continuing sweep\n");
+                                fflush(stdout);
+                            }
                             current_freq = backtrack_freq;
                             if (IsBannedFreq(&current_freq))
                                 skip = true;

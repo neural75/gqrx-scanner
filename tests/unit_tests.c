@@ -36,9 +36,10 @@ SOFTWARE.
 
 /* Non-static scan functions not declared in gqrx-scan.h */
 extern bool   Debounce(freq_t current_freq, double level);
-extern freq_t BacktrackFrequency(freq_t current_freq,
+extern bool   BacktrackFrequency(freq_t current_freq,
                                  freq_t freq_interval, int numberOfIntervals,
-                                 freq_t freq_min, freq_t freq_max);
+                                 freq_t freq_min, freq_t freq_max,
+                                 freq_t *out_freq, double *out_level);
 #endif
 
 /* ========================================================================
@@ -763,9 +764,17 @@ static void test_backtrack_frequency_wraparound(void **state)
             GetSignalLevelEx ×5 → -50.0 each (above squelch → break)
        Return 146900000
     */
+    /* Each GetSignalLevelEx calibrate call consumes 1 initial + up to 10 polls = 11 responses.
+       Both probes read -50.0 (above squelch -80.0). */
     mock_socket_set_response("-80.0\n");
     mock_socket_add_response("RPRT 0\n");
     mock_socket_add_response("146900000\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
     mock_socket_add_response("-50.0\n");
     mock_socket_add_response("-50.0\n");
     mock_socket_add_response("-50.0\n");
@@ -780,11 +789,22 @@ static void test_backtrack_frequency_wraparound(void **state)
     mock_socket_add_response("-50.0\n");
     mock_socket_add_response("-50.0\n");
     mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+    mock_socket_add_response("-50.0\n");
+
     g_sockfd = MOCK_SOCKFD;
-    freq_t result = BacktrackFrequency(144050000,
-                                        100000, 2,
-                                        144000000, 147000000);
-    assert_int_equal(result, 146900000);
+    freq_t bt_freq;
+    double bt_level;
+    bool found = BacktrackFrequency(144050000,
+                                    100000, 2,
+                                    144000000, 147000000,
+                                    &bt_freq, &bt_level);
+    assert_true(found);
+    assert_int_equal(bt_freq, 146900000);
 }
 
 static void test_backtrack_frequency_not_found(void **state)
@@ -820,10 +840,14 @@ static void test_backtrack_frequency_not_found(void **state)
     mock_socket_add_response("-120.0\n");
 
     g_sockfd = MOCK_SOCKFD;
-    freq_t result = BacktrackFrequency(145000000,
-                                        100000, 2,
-                                        144000000, 147000000);
-    assert_int_equal(result, 144800000);
+    freq_t bt_freq;
+    double bt_level;
+    bool found = BacktrackFrequency(145000000,
+                                    100000, 2,
+                                    144000000, 147000000,
+                                    &bt_freq, &bt_level);
+    assert_false(found);
+    assert_int_equal(bt_freq, 144800000);
 }
 
 #endif /* HAVE_WRAP_SOCKET_MOCKS */

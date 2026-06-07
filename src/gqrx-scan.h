@@ -35,6 +35,7 @@ extern int   BannedFreq_Max;
 extern bool      opt_tag_search;
 extern char     *opt_tags[TAG_MAX];
 extern int       opt_tag_max;
+extern unsigned long g_settle_time_us;
 extern freq_t    opt_min_freq;
 extern freq_t    opt_max_freq;
 extern freq_t    opt_scan_bw;

@@ -10,13 +10,15 @@
 #include <stdlib.h>
 
 #define BUFSIZE 1024
-#define RESPONSE_QUEUE_MAX 16
+#define RESPONSE_QUEUE_MAX 128
 #define CARRIERS_MAX 256
 #define PROFILE_EXPECTED_MAX 32
 
 /* ==================================================================
  * Response queue (kept for backward compat with protocol-unit tests)
  * ================================================================== */
+
+extern bool g_socket_dead;
 
 static char last_command[BUFSIZE] = {0};
 static char response_queue[RESPONSE_QUEUE_MAX][BUFSIZE];
@@ -111,6 +113,7 @@ void mock_socket_reset(void)
 {
     mock_enabled = true;
     profile_mode = false;
+    g_socket_dead = false;
     last_set_freq = 0;
     memset(last_command, 0, BUFSIZE);
     memset(actual_hostname, 0, BUFSIZE);

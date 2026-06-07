@@ -98,7 +98,8 @@ bool SetModulationAndBandwidth (int sockfd, char *modulation, char *bandwidth);
 bool GetSignalLevel(int sockfd, double *dBFS);
 bool GetSquelchLevel(int sockfd, double *dBFS);
 bool SetSquelchLevel(int sockfd, double dBFS);
-bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp);
+bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp, bool calibrate);
+extern unsigned long g_settle_time_us;
 bool StartRecording(int sockfd);
 bool StopRecording(int sockfd);
 

@@ -104,9 +104,12 @@ int Connect (char *hostname, int portno)
 //
 bool Send(int sockfd, char *buf)
 {
-    int n;
+    ssize_t n;
 
-    n = write(sockfd, buf, strlen(buf));
+    if (g_socket_dead)
+        return false;
+
+    n = write(sockfd, buf, strnlen(buf, BUFSIZE));
     if (n < 0)
     {
         fprintf(stderr, "Warning: write to socket failed: %s\n", strerror(errno));
@@ -180,6 +183,8 @@ bool SetFreq(int sockfd, freq_t freq)
         }
         if (freq_current == freq)
             return true;
+        if (--error_retries <= 0)
+            return false;
         usleep(1000);
     }
 }
@@ -276,25 +281,137 @@ bool SetSquelchLevel(int sockfd, double dBFS)
 }
 //
 // GetSignalLevelEx
-// Get a bunch of sample with some delay and calculate the mean value
+// Read samples from Gqrx and return the maximum level found.
 //
-bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp)
+// When calibrate == false (fast path):
+//   Take n_samp quick samples 1 ms apart and return the maximum.
+//   Used by the main scan loop and Debounce where speed matters.
+//
+// When calibrate == true (slow path):
+//   Poll GetSignalLevel every 50 ms until the level stabilizes
+//   (<1 dB change for 3 consecutive polls).  Track the maximum
+//   level and the time it took to reach it, then update
+//   g_settle_time_us via EWMA so subsequent probes use the
+//   correct settle time.  Used by BacktrackFrequency and
+//   AdjustFrequency after SetFreq.
+//
+bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp, bool calibrate)
 {
-    double temp_level;
-    *dBFS = 0;
-    int errors = 0;
-    for (int i = 0; i < n_samp; i++)
+    if (calibrate)
     {
-        if ( GetSignalLevel(sockfd, &temp_level) )
-            *dBFS = *dBFS + temp_level;
-        else
-            errors++;
-        usleep(1000);
+        //
+        // Slow calibrating path
+        //
+        *dBFS = -INFINITY;
+        double max_level = -INFINITY;
+        double settled = -INFINITY;
+        double curr, initial;
+        int max_time_ms = 0;
+        int max_polls = (int)(g_settle_time_us / 50000);
+        if (max_polls < 2)
+            max_polls = 2;
+        if (max_polls > 20)
+            max_polls = 20;
+
+        if (!GetSignalLevel(sockfd, &initial))
+            return false;
+        max_level = settled = initial;
+
+        //
+        // Poll up to max_polls times (50 ms apart).  Track when the
+        // level reaches its maximum (noise -> carrier peak) and then
+        // whether it stays within 1 dB for 3 consecutive polls (full
+        // pipeline settle).  This gives the true settle time instead
+        // of the premature time-to-max that would under-estimate.
+        //
+        bool max_reached = false;
+        double prev_since_max = 0;
+        int stable_after_max = 0;
+        unsigned long settle_time_ms = 0;
+        int poll_count = 0;
+
+        for (int i = 0; i < max_polls; i++)
+        {
+            usleep(50000);
+            if (!GetSignalLevel(sockfd, &curr))
+                continue;
+            settled = curr;
+            poll_count = i + 1;
+
+            if (curr > max_level)
+            {
+                max_level = curr;
+                max_time_ms = poll_count * 50;
+                max_reached = true;
+                stable_after_max = 0;
+                prev_since_max = curr;
+            }
+
+            //
+            // After the level has started rising (max_reached), check
+            // whether it stays within 1 dB for 3 consecutive polls —
+            // that is the true settle time.
+            //
+            if (max_reached)
+            {
+                if (fabs(curr - prev_since_max) < 1.0)
+                    stable_after_max++;
+                else
+                    stable_after_max = 0;
+                prev_since_max = curr;
+
+                if (stable_after_max >= 3)
+                {
+                    settle_time_ms = poll_count * 50;
+                    break;
+                }
+            }
+        }
+
+        //
+        // Only calibrate on a real noise -> carrier transition
+        // (level rose more than 3 dB from the initial reading).
+        // This rejects carrier -> noise and noise -> noise steps.
+        //
+        if (max_level - initial > 3.0)
+        {
+            unsigned long measured_us;
+            if (settle_time_ms > 0)
+                measured_us = settle_time_ms * 1000;   // actual settle
+            else
+                measured_us = poll_count * 50000;       // full duration fallback
+            unsigned long old_settle = g_settle_time_us;
+            g_settle_time_us = (unsigned long)(0.3 * measured_us + 0.7 * g_settle_time_us);
+            fprintf(stderr, "[DIAG] settle_time: measured=%lu us, old=%lu us, new=%lu us\n",
+                    measured_us, old_settle, g_settle_time_us);
+        }
+
+        *dBFS = settled;
+        return true;
     }
-    if (errors >= n_samp)
-        return false;
-    *dBFS = *dBFS / (n_samp - errors);
-    return true;
+    else
+    {
+        //
+        // Fast path: maximum of n_samp samples, 1 ms apart
+        //
+        double temp_level;
+        *dBFS = -INFINITY;
+        int errors = 0;
+        for (int i = 0; i < n_samp; i++)
+        {
+            if ( GetSignalLevel(sockfd, &temp_level) )
+            {
+                if (temp_level > *dBFS)
+                    *dBFS = temp_level;
+            }
+            else
+            {
+                errors++;
+            }
+            usleep(1000);
+        }
+        return errors < n_samp;
+    }
 }
 
 //
