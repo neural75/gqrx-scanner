@@ -54,6 +54,7 @@ static int    carriers_count = 0;
 
 static double profile_noise_floor = -120.0;
 static double profile_squelch     = -110.0;
+static freq_t profile_filter_bw   = 12500;
 static freq_t profile_min_freq    = 0;
 static freq_t profile_max_freq    = 0;
 
@@ -152,6 +153,8 @@ bool mock_load_profile(const char *filename)
         if (sscanf(line, "NOISE_FLOOR %lf", &profile_noise_floor) == 1)
             continue;
         if (sscanf(line, "SQUELCH %lf", &profile_squelch) == 1)
+            continue;
+        if (sscanf(line, "FILTER_BW %llu", (unsigned long long*)&profile_filter_bw) == 1)
             continue;
         if (sscanf(line, "MIN_FREQ %llu", (unsigned long long*)&profile_min_freq) == 1)
             continue;
@@ -323,6 +326,16 @@ static void handle_write(const char *cmd)
         double result = signal_at_freq(last_set_freq);
         char buf[BUFSIZE];
         snprintf(buf, sizeof(buf), "%.1f\n", result);
+        enqueue(buf);
+        return;
+    }
+
+    /* "m" or "m \n" — get mode (returns <mode>\n<bw_hz>\n) */
+    if (cmd[0] == 'm' && (cmd[1] == '\n' || cmd[1] == '\0'))
+    {
+        char buf[BUFSIZE];
+        snprintf(buf, sizeof(buf), "FM\n%llu\n",
+                 (unsigned long long)profile_filter_bw);
         enqueue(buf);
         return;
     }

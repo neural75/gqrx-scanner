@@ -1458,6 +1458,9 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
         //
         // First pass: collect all clusters from the sweep. Clusters are
         // consecutive bins whose level is at or above the squelch threshold.
+        // Within each cluster all distinct local maxima (separated by a
+        // valley deeper than PEAK_PROMINENCE_DB) are emitted as separate
+        // candidates.
         //
         #define FFT_CLUSTER_MAX 4096
         fft_cluster_t clusters[FFT_CLUSTER_MAX];
@@ -1473,64 +1476,145 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
                 continue;
             }
 
+            /* Collect the contiguous above-squelch region */
+            int cs = i;
+            while (i < resp_C && values[i] >= squelch)
+                i++;
+            int ce = i;  // exclusive
+
             if (opt_verbose)
             {
-                double bin_freq = resp_S + (double)i * resp_B;
+                double bin_freq = resp_S + (double)cs * resp_B;
                 printf("[FFT] cluster starts at bin[%d] freq=%.0f val=%.1f sq=%.1f\n",
-                       i, bin_freq, (double)values[i], squelch);
+                       cs, bin_freq, (double)values[cs], squelch);
                 fflush(stdout);
             }
 
-            double peak_level = -200.0;
-            double peak_bin_center = 0.0;
+            /* Find all local maxima within [cs, ce).  A bin is a local
+             * maximum when it is strictly higher than both neighbours;
+             * this prevents flat/plateau regions from emitting multiple
+             * candidates. */
+            int locmax_idx[FFT_CLUSTER_MAX];
+            double locmax_level[FFT_CLUSTER_MAX];
+            int n_locmax = 0;
 
-            while (i < resp_C && values[i] >= squelch)
+            for (int j = cs; j < ce && n_locmax < FFT_CLUSTER_MAX; j++)
             {
-                double bin_center = resp_S + (double)i * resp_B;
-                if ((double)values[i] > peak_level)
+                bool left_ok  = (j == cs)      || (double)values[j] > (double)values[j-1];
+                bool right_ok = (j == ce - 1)  || (double)values[j] > (double)values[j+1];
+                if (left_ok && right_ok)
                 {
-                    peak_level = (double)values[i];
-                    peak_bin_center = bin_center;
+                    locmax_idx[n_locmax]   = j;
+                    locmax_level[n_locmax] = (double)values[j];
+                    n_locmax++;
                 }
-                i++;
             }
 
-            if (peak_level < -100.0)
-                continue;
-
-            freq_t candidate = (freq_t)(peak_bin_center / 1000.0 + 0.5) * 1000;
-
-            if (prev_candidate != 0 &&
-                (candidate > prev_candidate ?
-                 candidate - prev_candidate :
-                 prev_candidate - candidate) < opt_scan_bw)
+            /* If the region is monotonic (no local maxima), fall back to
+             * emitting the single strongest bin. */
+            if (n_locmax < 1)
             {
-                if (opt_verbose)
+                int best_j = cs;
+                double best_val = (double)values[cs];
+                for (int j = cs + 1; j < ce; j++)
                 {
-                    printf("[FFT] merge skip %s (prev=%s, dist < %llu)\n",
-                           print_freq(candidate),
-                           print_freq(prev_candidate),
-                           opt_scan_bw);
-                    fflush(stdout);
+                    double v = (double)values[j];
+                    if (v > best_val)
+                    {
+                        best_val = v;
+                        best_j = j;
+                    }
                 }
-                continue;
-            }
-            prev_candidate = candidate;
-
-            if (IsBannedFreq(&candidate))
-            {
-                if (opt_verbose)
-                {
-                    printf("[FFT] candidate %s banned, skipping\n",
-                           print_freq(candidate));
-                    fflush(stdout);
-                }
-                continue;
+                locmax_idx[0]   = best_j;
+                locmax_level[0] = best_val;
+                n_locmax = 1;
             }
 
-            clusters[n_clusters].peak_freq   = candidate;
-            clusters[n_clusters].peak_level  = peak_level;
-            n_clusters++;
+            /* Emit one candidate per local maximum whose topographic
+             * prominence (drop to the shallower adjacent valley) exceeds
+             * PEAK_PROMINENCE_DB.  6 dB rejects noise bumps while
+             * easily passing real FM stations separated by 400+ kHz. */
+            const double PEAK_PROMINENCE_DB = 6.0;
+
+            for (int p = 0; p < n_locmax; p++)
+            {
+                int   midx = locmax_idx[p];
+                double pk  = locmax_level[p];
+
+                /* Deepest valley between this peak and the previous peak
+                 * (or the cluster-start edge if first in the region). */
+                double min_left = 0.0;
+                int left_bound = (p > 0) ? locmax_idx[p-1] : cs;
+                for (int j = left_bound; j < midx; j++)
+                {
+                    double v = (double)values[j];
+                    if (v < min_left)
+                        min_left = v;
+                }
+
+                /* Deepest valley to the right. */
+                double min_right = 0.0;
+                int right_bound = (p < n_locmax - 1) ? locmax_idx[p+1] : ce - 1;
+                for (int j = midx + 1; j <= right_bound; j++)
+                {
+                    double v = (double)values[j];
+                    if (v < min_right)
+                        min_right = v;
+                }
+
+                /* Key col = shallower of the two valleys (higher minimum).
+                 * Prominence = peak level above the key col. */
+                double key_col = (min_left > min_right) ? min_left : min_right;
+                double prominence = pk - key_col;
+
+                if (prominence < PEAK_PROMINENCE_DB)
+                {
+                    if (opt_verbose)
+                    {
+                        printf("[FFT] skip peak at bin[%d] %.0f Hz"
+                               " (prominence %.1f dB < %.0f dB)\n",
+                               midx, resp_S + (double)midx * resp_B,
+                               prominence, PEAK_PROMINENCE_DB);
+                        fflush(stdout);
+                    }
+                    continue;
+                }
+
+                freq_t candidate = (freq_t)((resp_S + (double)midx * resp_B)
+                                            / 1000.0 + 0.5) * 1000;
+
+                if (prev_candidate != 0 &&
+                    (candidate > prev_candidate ?
+                     candidate - prev_candidate :
+                     prev_candidate - candidate) < opt_scan_bw)
+                {
+                    if (opt_verbose)
+                    {
+                        printf("[FFT] merge skip %s (prev=%s, dist < %llu)\n",
+                               print_freq(candidate),
+                               print_freq(prev_candidate),
+                               opt_scan_bw);
+                        fflush(stdout);
+                    }
+                    continue;
+                }
+                prev_candidate = candidate;
+
+                if (IsBannedFreq(&candidate))
+                {
+                    if (opt_verbose)
+                    {
+                        printf("[FFT] candidate %s banned, skipping\n",
+                               print_freq(candidate));
+                        fflush(stdout);
+                    }
+                    continue;
+                }
+
+                clusters[n_clusters].peak_freq   = candidate;
+                clusters[n_clusters].peak_level  = pk;
+                n_clusters++;
+            }
         }
 
         //

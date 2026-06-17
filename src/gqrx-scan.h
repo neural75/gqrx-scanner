@@ -21,7 +21,7 @@ typedef struct {
 } FREQ;
 
 /* Scan mode */
-typedef enum { sweep, bookmark } SCAN_MODE;
+typedef enum { sweep, bookmark, fft } SCAN_MODE;
 
 /* Global arrays */
 extern FREQ* Frequencies;
@@ -62,6 +62,7 @@ extern void   ClearAllBans(void);
 extern freq_t FilterFrequency(int idx);
 extern bool   ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interval);
 extern bool   ScanBookmarkedFrequenciesInRange(freq_t freq_min, freq_t freq_max);
+extern bool   ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max);
 
 /* Global state management */
 void SetOptDefaults(void);

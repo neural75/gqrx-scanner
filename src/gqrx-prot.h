@@ -23,6 +23,7 @@ SOFTWARE.
 */
 #ifndef _GQRX_PROT_H_
 #include <stdbool.h>
+#include <stddef.h>
 
 #define _GQRX_PROT_H_
 
@@ -85,9 +86,20 @@ int Connect (char *hostname, int portno);
 bool Send(int sockfd, char *buf);
 
 //
-// Recv
+// Recv (fixed-size buffer, existing)
 //
 bool Recv(int sockfd, char *buf);
+
+//
+// RecvResponse — read a full response line into a dynamically allocated buffer.
+// The caller must call FreeResponse(out) when done.
+//
+bool RecvResponse(int sockfd, char **out, size_t *out_len);
+
+//
+// FreeResponse — free a buffer allocated by RecvResponse and set *out to NULL.
+//
+void FreeResponse(char **out);
 
 //
 // GQRX Protocol
@@ -102,5 +114,35 @@ bool GetSignalLevelEx(int sockfd, double *dBFS, int n_samp, bool calibrate);
 extern unsigned long g_settle_time_us;
 bool StartRecording(int sockfd);
 bool StopRecording(int sockfd);
+
+//
+// GetFilterBandwidth — send "m" to Gqrx and parse the two-line response:
+//   <mode_name>\n
+//   <bandwidth_hz>\n
+// Returns the current channel filter bandwidth in Hz.
+//
+bool GetFilterBandwidth(int sockfd, freq_t *bw_hz);
+
+//
+// FFT spectrum protocol (Gqrx remote-control FFT extension)
+//
+// fft_bw — target bin width in Hz (passed as W: argument to Gqrx)
+//
+bool GetFFTParameters(int sockfd, int fft_bw,
+                      freq_t *center_freq, double *start_hz,
+                      double *end_hz, double *bin_width,
+                      int *total_bins, int *count);
+
+bool GetFFTValues(int sockfd, int fft_bw,
+                  float *values, int max_values,
+                  freq_t *center_freq, double *start_hz,
+                  double *end_hz, double *bin_width,
+                  int *total_bins, int *count);
+
+bool GetFFTValuesPartial(int sockfd, double start_hz, int n_bins, int fft_bw,
+                         float *values, int max_values,
+                         freq_t *center_freq, double *start_hz_out,
+                         double *end_hz_out, double *bin_width,
+                         int *total_bins, int *count_out);
 
 #endif /* _GQRX_PROT_H_ */

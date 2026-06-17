@@ -451,3 +451,290 @@ bool StopRecording(int sockfd)
 
     return true;
 }
+
+//
+// RecvResponse — read a full response line from the socket into a
+// dynamically allocated buffer.  Grows the buffer as needed to handle
+// long responses (e.g. FFT spectrum data).  The caller must free the
+// output with FreeResponse().
+//
+// Returns the allocated buffer via *out and its length via *out_len
+// (out_len may be NULL).  On failure *out is NULL and false is returned.
+//
+bool RecvResponse(int sockfd, char **out, size_t *out_len)
+{
+    size_t capacity = 4096;
+    size_t total = 0;
+    char *buf = malloc(capacity);
+    if (!buf)
+    {
+        *out = NULL;
+        return false;
+    }
+
+    while (1)
+    {
+        ssize_t n = read(sockfd, buf + total, capacity - total - 1);
+        if (n < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            g_socket_dead = true;
+            free(buf);
+            *out = NULL;
+            return false;
+        }
+        if (n == 0)
+        {
+            // EOF — if we have data, accept it; otherwise fail
+            if (total == 0)
+            {
+                free(buf);
+                *out = NULL;
+                return false;
+            }
+            break;
+        }
+        total += (size_t)n;
+        buf[total] = '\0';
+
+        // Stop at newline (full line received)
+        if (strchr(buf, '\n'))
+            break;
+
+        // Grow buffer if nearly full
+        if (total >= capacity - 1)
+        {
+            capacity *= 2;
+            char *newbuf = realloc(buf, capacity);
+            if (!newbuf)
+            {
+                free(buf);
+                *out = NULL;
+                return false;
+            }
+            buf = newbuf;
+        }
+    }
+
+    *out = buf;
+    if (out_len)
+        *out_len = total;
+    return true;
+}
+
+//
+// FreeResponse — free a buffer allocated by RecvResponse and set *out to NULL.
+//
+void FreeResponse(char **out)
+{
+    if (out && *out)
+    {
+        free(*out);
+        *out = NULL;
+    }
+}
+
+//
+// GetFilterBandwidth -- send "m" to Gqrx and read the two-line response.
+// Returns the current channel filter bandwidth in Hz.
+//
+bool GetFilterBandwidth(int sockfd, freq_t *bw_hz)
+{
+    char buf[BUFSIZE];
+
+    if (!Send(sockfd, "m\n"))
+        return false;
+    if (!Recv(sockfd, buf))
+        return false;
+
+    if (strcmp(buf, "RPRT 1\n") == 0)
+        return false;
+
+    // Find newline separating mode name from bandwidth value
+    char *nl = strchr(buf, '\n');
+    if (!nl)
+        return false;
+    nl++;
+
+    long val = strtol(nl, NULL, 10);
+    if (val <= 0)
+        return false;
+
+    *bw_hz = (freq_t)val;
+    return true;
+}
+
+//
+// GetFFTParameters — send "FFT Q W:<fft_bw>" to Gqrx and parse
+// the response header.  No FFT bin values are returned.
+//
+// Returns:
+//   center_freq — receiver's tuned center frequency (F:)
+//   start_hz    — center of the first visible bin (S:)
+//   end_hz      — center of the last  visible bin (E:)
+//   bin_width   — width of each FFT bin in Hz (B:)
+//   total_bins  — total bins in the full spectrum (N:)
+//   count       — bins in this response (C:)
+//
+bool GetFFTParameters(int sockfd, int fft_bw,
+                      freq_t *center_freq, double *start_hz,
+                      double *end_hz, double *bin_width,
+                      int *total_bins, int *count)
+{
+    char cmd[BUFSIZE];
+    snprintf(cmd, sizeof(cmd), "FFT Q W:%d\n", fft_bw);
+
+    if (!Send(sockfd, cmd))
+        return false;
+
+    char *resp = NULL;
+    if (!RecvResponse(sockfd, &resp, NULL))
+        return false;
+
+    int rprt;
+    int matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
+                         &rprt, center_freq, start_hz, end_hz,
+                         bin_width, total_bins, count);
+
+    FreeResponse(&resp);
+
+    if (matched != 7 || rprt != 0)
+        return false;
+
+    return true;
+}
+
+//
+// GetFFTValues — send "FFT V W:<fft_bw>" to Gqrx and return
+// the full spectrum (all visible bins).  Parses the header then
+// fills the values[] array with up to max_values floats.
+//
+// To avoid repeated allocations, the caller should pre-allocate
+// values[] with enough capacity for total_bins (obtained from a
+// prior GetFFTParameters call).
+//
+bool GetFFTValues(int sockfd, int fft_bw,
+                  float *values, int max_values,
+                  freq_t *center_freq, double *start_hz,
+                  double *end_hz, double *bin_width,
+                  int *total_bins, int *count)
+{
+    char cmd[BUFSIZE];
+    snprintf(cmd, sizeof(cmd), "FFT V W:%d\n", fft_bw);
+
+    if (!Send(sockfd, cmd))
+        return false;
+
+    char *resp = NULL;
+    if (!RecvResponse(sockfd, &resp, NULL))
+        return false;
+
+    int rprt;
+    int matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
+                         &rprt, center_freq, start_hz, end_hz,
+                         bin_width, total_bins, count);
+
+    if (matched != 7 || rprt != 0)
+    {
+        FreeResponse(&resp);
+        return false;
+    }
+
+    if (*count > max_values)
+        *count = max_values;
+
+    // Locate the first float after the header (after "C:<count>")
+    char *p = strstr(resp, "C:");
+    if (!p)
+    {
+        FreeResponse(&resp);
+        return false;
+    }
+    p = strchr(p, ' ');
+    if (!p)
+    {
+        *count = 0;
+        FreeResponse(&resp);
+        return true;
+    }
+    p++; // skip space
+
+    for (int i = 0; i < *count; i++)
+    {
+        char *end;
+        values[i] = strtof(p, &end);
+        if (end == p)
+            break; // parse failure, stop early
+        p = end;
+    }
+
+    FreeResponse(&resp);
+    return true;
+}
+
+//
+// GetFFTValuesPartial — request a sub-range of the FFT spectrum
+// via "FFT V S:<start_hz> C:<n_bins> W:<fft_bw>".
+//
+// This is used to request only the reliable portion of the visible
+// spectrum, avoiding the filter roll-off at the band edges.
+//
+bool GetFFTValuesPartial(int sockfd, double start_hz, int n_bins, int fft_bw,
+                         float *values, int max_values,
+                         freq_t *center_freq, double *start_hz_out,
+                         double *end_hz_out, double *bin_width,
+                         int *total_bins, int *count_out)
+{
+    char cmd[BUFSIZE];
+    snprintf(cmd, sizeof(cmd), "FFT V S:%.0f C:%d W:%d\n", start_hz, n_bins, fft_bw);
+
+    if (!Send(sockfd, cmd))
+        return false;
+
+    char *resp = NULL;
+    if (!RecvResponse(sockfd, &resp, NULL))
+        return false;
+
+    int rprt;
+    int matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
+                         &rprt, center_freq, start_hz_out, end_hz_out,
+                         bin_width, total_bins, count_out);
+
+    if (matched != 7 || rprt != 0)
+    {
+        FreeResponse(&resp);
+        return false;
+    }
+
+    if (*count_out > max_values)
+        *count_out = max_values;
+
+    // Locate the first float after the header
+    char *p = strstr(resp, "C:");
+    if (!p)
+    {
+        FreeResponse(&resp);
+        return false;
+    }
+    p = strchr(p, ' ');
+    if (!p)
+    {
+        *count_out = 0;
+        FreeResponse(&resp);
+        return true;
+    }
+    p++;
+
+    for (int i = 0; i < *count_out; i++)
+    {
+        char *end;
+        values[i] = strtof(p, &end);
+        if (end == p)
+            break;
+        p = end;
+    }
+
+    FreeResponse(&resp);
+    return true;
+}
