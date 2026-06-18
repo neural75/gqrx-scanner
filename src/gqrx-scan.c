@@ -1355,8 +1355,7 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
 //
 bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 {
-    (void)freq_min;
-    (void)freq_max;
+    bool has_range = (freq_min != 0 || freq_max != 0);
 
     double squelch = 0;
     GetSquelchLevel(g_sockfd, &squelch);
@@ -1534,7 +1533,7 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
              * prominence (drop to the shallower adjacent valley) exceeds
              * PEAK_PROMINENCE_DB.  6 dB rejects noise bumps while
              * easily passing real FM stations separated by 400+ kHz. */
-            const double PEAK_PROMINENCE_DB = 6.0;
+            const double PEAK_PROMINENCE_DB = 3.0;
 
             for (int p = 0; p < n_locmax; p++)
             {
@@ -1542,8 +1541,10 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
                 double pk  = locmax_level[p];
 
                 /* Deepest valley between this peak and the previous peak
-                 * (or the cluster-start edge if first in the region). */
-                double min_left = 0.0;
+                 * (or the cluster-start edge if first in the region).
+                 * Initialise to squelch so isolated/edge-bin peaks are
+                 * measured against the noise floor. */
+                double min_left = squelch;
                 int left_bound = (p > 0) ? locmax_idx[p-1] : cs;
                 for (int j = left_bound; j < midx; j++)
                 {
@@ -1553,7 +1554,7 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
                 }
 
                 /* Deepest valley to the right. */
-                double min_right = 0.0;
+                double min_right = squelch;
                 int right_bound = (p < n_locmax - 1) ? locmax_idx[p+1] : ce - 1;
                 for (int j = midx + 1; j <= right_bound; j++)
                 {
@@ -1582,6 +1583,15 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 
                 freq_t candidate = (freq_t)((resp_S + (double)midx * resp_B)
                                             / 1000.0 + 0.5) * 1000;
+
+                if (has_range && (candidate < freq_min || candidate > freq_max))
+                {
+                    if (opt_verbose)
+                        printf("[FFT] skip out-of-range %s (%.0f-%.0f)\n",
+                               print_freq(candidate),
+                               (double)freq_min, (double)freq_max);
+                    continue;
+                }
 
                 if (prev_candidate != 0 &&
                     (candidate > prev_candidate ?
@@ -1657,6 +1667,9 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
             //
             // Refine candidate to 1/100 of filter bandwidth resolution.
             //
+            if (has_range && (candidate < freq_min || candidate > freq_max))
+                continue;
+
             freq_t coarse = candidate;
             RefineFFTPeak(g_sockfd, &candidate, fft_bw, fft_bw / 100);
             if (opt_verbose && coarse != candidate)
@@ -1680,6 +1693,9 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
                        print_freq(candidate));
                 fflush(stdout);
             }
+            if (has_range && (candidate < freq_min || candidate > freq_max))
+                continue;
+
             SetFreq(g_sockfd, candidate);
             usleep(g_settle_time_us);
 
@@ -2573,7 +2589,7 @@ int main(int argc, char **argv) {
 
     if (!opt_tag_search) // sweep or bookmark
     {
-        if (opt_min_freq == 0 && opt_max_freq == 0)
+        if (opt_min_freq == 0 && opt_max_freq == 0 && opt_scan_mode != fft)
         {
             freq_t current_freq;
             GetCurrentFreq(g_sockfd, &current_freq);
