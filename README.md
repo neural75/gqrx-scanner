@@ -1,4 +1,11 @@
-![gqrx-scanner](media/gqrx-scanner-repository.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./media/gqrx-scanner-repository-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="./media/gqrx-scanner-repository-light.png">
+    <img alt="logo" src="./media/gqrx-scanner-repository-light.png" width="224">
+  </picture>
+</p>
+<!-- ![gqrx-scanner](media/gqrx-scanner-repository.png) -->
 # gqrx-scanner
 [![CI](https://github.com/neural75/gqrx-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/neural75/gqrx-scanner/actions/workflows/ci.yml)
 
