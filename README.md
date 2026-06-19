@@ -290,6 +290,3 @@ sudo make uninstall
 ```
 
 
-## TODOs
-* set modulation in bookmark search
-* parsable output in csv?
