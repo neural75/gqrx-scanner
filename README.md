@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./media/gqrx-scanner-repository-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="./media/gqrx-scanner-repository-light.png">
+    <source media="(prefers-color-scheme: dark)" srcset="./media/gqrx-scanner-repository-dark.png" width="1280">
+    <source media="(prefers-color-scheme: light)" srcset="./media/gqrx-scanner-repository-light.png" width="1280">
     <img alt="logo" src="./media/gqrx-scanner-repository-light.png" width="224">
   </picture>
 </p>
