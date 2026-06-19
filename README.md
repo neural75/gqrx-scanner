@@ -6,6 +6,7 @@
   </picture>
 </p>
 <!-- ![gqrx-scanner](media/gqrx-scanner-repository.png) -->
+
 # gqrx-scanner
 [![CI](https://github.com/neural75/gqrx-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/neural75/gqrx-scanner/actions/workflows/ci.yml)
 
