@@ -476,6 +476,7 @@ static bool VoxProcessFrame(short *frame, int nsamples, int idx, int total)
 
     bool decision = VoxVADUpdate(&g_vad_state, &feat);
 
+    (void)idx; (void)total;
     if (opt_verbose)
     {
         int score = (pitch_strength > 0.35 ? 2 : 0)
@@ -483,14 +484,16 @@ static bool VoxProcessFrame(short *frame, int nsamples, int idx, int total)
                   + (ZC < 0.12 ? 1 : 0)
                   + (El_minus_Ef > 4.0 ? 1 : 0);
 
-        fprintf(stderr, "vox:   frame=%2d/%d pitch=%.3f ZC=%.3f"
-                " El-Ef=%.1f score=%d cons=%d hang=%d -> %s\n",
-                idx, total,
-                pitch_strength, ZC, El_minus_Ef,
-                score,
-                g_vad_state.consecutive_pitch_frames,
-                g_vad_state.hangover,
-                decision ? "VOICE" : "silence");
+        /* Commented: per-frame prints are too verbose.
+         * fprintf(stderr, "vox:   frame=%2d/%d pitch=%.3f ZC=%.3f"
+         *         " El-Ef=%.1f score=%d cons=%d hang=%d -> %s\n",
+         *         idx, total,
+         *         pitch_strength, ZC, El_minus_Ef,
+         *         score,
+         *         g_vad_state.consecutive_pitch_frames,
+         *         g_vad_state.hangover,
+         *         decision ? "VOICE" : "silence");
+         */
     }
 
     return decision;
@@ -533,14 +536,18 @@ bool VoxAudioHasSignal(long sample_time_us)
     // ------ Wait for data ------
     {
         int pr = poll(&pfd, 1, sample_time_us / 1000);
-        if (opt_verbose)
-            fprintf(stderr, "vox: poll ret=%d revents=0x%x (timeout=%ldms)\n",
-                    pr, pfd.revents, sample_time_us / 1000);
+        /* Commented: too verbose.
+         * if (opt_verbose)
+         *     fprintf(stderr, "vox: poll ret=%d revents=0x%x (timeout=%ldms)\n",
+         *             pr, pfd.revents, sample_time_us / 1000);
+         */
         if (pr <= 0)
         {
-            if (opt_verbose)
-                fprintf(stderr, pr == 0 ? "vox: fresh poll timeout\n"
-                         : "vox: fresh poll error (errno=%d)\n", errno);
+            /* Commented: too verbose.
+             * if (opt_verbose)
+             *     fprintf(stderr, pr == 0 ? "vox: fresh poll timeout\n"
+             *              : "vox: fresh poll error (errno=%d)\n", errno);
+             */
             return false;
         }
     }
@@ -563,8 +570,10 @@ bool VoxAudioHasSignal(long sample_time_us)
     if (total <= 0)
         return false;
 
-    if (opt_verbose)
-        fprintf(stderr, "vox: drained %zd bytes\n", total);
+    /* Commented: too verbose.
+     * if (opt_verbose)
+     *     fprintf(stderr, "vox: drained %zd bytes\n", total);
+     */
 
     int nsamples = (int)(total / (ssize_t)sizeof(short));
     int nframes  = nsamples / 128;
@@ -575,8 +584,8 @@ bool VoxAudioHasSignal(long sample_time_us)
             valid = 1;
 
     if (opt_verbose)
-        fprintf(stderr, "vox: batch %d frames, any_voice=%d\n",
-                nframes, valid);
+        fprintf(stderr, "vox: %d frames -> %s\n",
+                nframes, valid ? "VOICE" : "SILENCE");
 
     return (bool)valid;
 }

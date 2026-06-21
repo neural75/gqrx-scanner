@@ -1443,6 +1443,15 @@ ScanFFTBatchRefine(
  * candidate.  3 dB rejects noise bumps while passing real FM stations. */
 #define FFT_PEAK_PROMINENCE_DB 3.0
 
+/* Maximum bins per FFT sub-request when reading the spectrum via the
+ * "FFT V" protocol.  Each bin is serialised as ~7 bytes of text
+ * (" -xx.x").  Keeping sub-requests small avoids large text allocations
+ * and slow serialization on Gqrx's side when the visible spectrum is
+ * wide (30+ MHz at ~625 Hz resolution = 38k+ bins).
+ * Start at 50 for testing (each response ~400 bytes), ramp up after
+ * validating chunk alignment. */
+#define FFT_CHUNK_BINS 4000
+
 /* CLEAN-style detection on a spectrum slice.
  *
  * Converts the slice to linear power, then iteratively finds the
@@ -1468,8 +1477,6 @@ ScanFFTBatchRefine(
  *   fs, fb       spectrum start (Hz) and bin width (Hz)
  *   lo           index offset into the parent vals[] array
  *   freq_min, freq_max, has_range   frequency range filter
- *   reject_edges  if true, reject candidates within fft_bw of the
- *                 visible spectrum edges (FFT roll-off zone)
  *   prev         previous candidate freq (merge check)
  *   clusters, max_clusters  output array and its capacity
  *   write_idx    absolute index into clusters[] to write from
@@ -1481,8 +1488,6 @@ static int CleanDetectGap(
     double radius_bins,
     double fs, double fb, int lo,
     freq_t freq_min, freq_t freq_max, bool has_range,
-    bool reject_edges,
-    freq_t q_start, freq_t q_end, freq_t fft_bw,
     freq_t *prev,
     fft_cluster_t *clusters, int max_clusters,
     int write_idx)
@@ -1539,16 +1544,6 @@ static int CleanDetectGap(
             continue;
         }
 
-        /* Reject peaks too close to the visible band edges.
-         *  Gqrx's FFT response rolls off near the edges so peaks
-         *  there are unreliable. */
-        if (reject_edges &&
-            (cf - q_start < (freq_t)fft_bw ||
-             q_end - cf < (freq_t)fft_bw))
-        {
-            continue;
-        }
-
         /* Merge check: skip if within opt_scan_bw of the previous
          * candidate in this gap (same station detected twice). */
         if (*prev != 0 &&
@@ -1569,6 +1564,184 @@ static int CleanDetectGap(
     }
 
     return added;
+}
+
+/* Read the FFT spectrum at a given resolution, splitting into
+ * sub-requests of FFT_CHUNK_BINS each to avoid serialising huge
+ * text responses from Gqrx.  Results are placed in accum[] at
+ * frequency-derived bin indices to maintain alignment across
+ * chunks. */
+static bool ReadSpectrum(
+    int     sockfd,
+    int     bw,
+    double  start_hz,
+    int     n_bins,
+    int     n_reads,
+    int     chunk_max,
+    float  *accum,
+    double *out_fs,
+    double *out_fb,
+    int    *out_fcount,
+    int    *out_n_valid)
+{
+    /*
+     * Read and accumulate the FFT spectrum from Gqrx via the "FFT V"
+     * protocol with automatic request chunking and multi-frame averaging.
+     *
+     * Sends one or more "FFT V S:<start> C:<count> W:<bw>" commands
+     * to cover the full [start_hz, start_hz + n_bins * bw) range.
+     * When n_reads > 1, accumulates linear power across multiple frames;
+     * the caller divides by *out_n_valid and converts to dBFS.
+     *
+     * Each sub-response is placed in the output array at the bin index
+     * derived from its actual returned S: and B: fields so that
+     * chunk-to-chunk alignment is frequency-correct even when Gqrx
+     * rounds the requested start frequency.
+     *
+     * Parameters:
+     *   sockfd      — Gqrx remote control socket
+     *   bw          — W: pooled bin width (Hz)
+     *   start_hz    — S: requested first-bin centre frequency
+     *   n_bins      — total bins to cover (accum capacity)
+     *   n_reads     — frames to average (1 = single, 5 = stabilised)
+     *   chunk_max   — max bins per sub-request (≤ n_bins)
+     *   accum       — output array (linear power, pre-zeroed, n_bins)
+     *   out_fs      — actual start frequency from first chunk
+     *   out_fb      — actual bin width from first chunk
+     *   out_fcount  — actual bins covered
+     *   out_n_valid — number of successful reads (1..n_reads)
+     *
+     * Returns true if at least one read returned useful data. */
+    *out_fs      = 0;
+    *out_fb      = 0;
+    *out_fcount  = 0;
+    *out_n_valid = 0;
+
+    if (chunk_max <= 0)
+        chunk_max = n_bins;
+
+    double end_hz = start_hz + (double)n_bins * (double)bw;
+
+    for (int r = 0; r < n_reads; r++)
+    {
+        if (r > 0)
+            usleep(50000);
+
+        float *read_buf = calloc((size_t)n_bins, sizeof(float));
+        if (!read_buf)
+            continue;
+
+        bool    chunk_ok = true;
+        int     last_idx = 0;
+        double  next_off = 0;  /* offset from start_hz for the next chunk */
+
+        while (start_hz + next_off < end_hz)
+        {
+            double c_start = start_hz + next_off;
+            int    c_bins  = chunk_max;
+
+            /* Shrink the last chunk if it would overshoot the total range */
+            if (c_start + (double)c_bins * (double)bw > end_hz)
+            {
+                c_bins = (int)((end_hz - c_start) / (double)bw);
+                if (c_bins <= 0)
+                    break;
+            }
+
+            float *tmp = malloc((size_t)c_bins * sizeof(float));
+            if (!tmp)
+            {
+                chunk_ok = false;
+                break;
+            }
+
+            freq_t  fc;
+            double  rs = 0, re = 0, rb = 0;
+            int     rn = 0, nv = 0;
+
+            bool ok = GetFFTValuesPartial(
+                sockfd, c_start, c_bins, bw,
+                tmp, c_bins,
+                &fc, &rs, &re, &rb, &rn, &nv);
+
+            if (!ok || nv <= 0)
+            {
+                free(tmp);
+                chunk_ok = false;
+                break;
+            }
+
+            /* Verify the returned window covers the requested range */
+            if (fabs(rs - c_start) > (double)bw)
+            {
+                free(tmp);
+                chunk_ok = false;
+                break;
+            }
+
+            /*
+             * Derive the bin index in the global spectrum from the
+             * actual returned S: and B:, not the request parameters.
+             * This prevents misalignment when Gqrx rounds the requested
+             * start frequency or returns a slightly different bin width.
+             *
+             * Example: request S:1000000 B:625, Gqrx returns S:1000312.5.
+             *   idx_d = (1000312.5 - 1000000) / 625 = 0.5
+             *   bin = round(0.5) = 1   ← bin 1, not bin 0
+             * This puts the data at the correct frequency-derived slot. */
+            double idx_d = (rs - start_hz) / rb;
+            int    bin   = (int)round(idx_d);
+            int    expected = (int)(next_off / (double)bw);
+
+            /*
+             * Safety guard: if the returned start frequency drifted by
+             * more than one bin from the flat grid, discard this chunk
+             * to avoid gaps or overlaps in the output spectrum. */
+            if (abs(bin - expected) > 1)
+            {
+                free(tmp);
+                chunk_ok = false;
+                break;
+            }
+
+            int copy = nv;
+            if (bin + copy > n_bins)
+                copy = n_bins - bin;
+            if (copy > 0)
+            {
+                for (int j = 0; j < copy; j++)
+                    read_buf[bin + j] = tmp[j];
+                if (bin + copy > last_idx)
+                    last_idx = bin + copy;
+            }
+
+            free(tmp);
+
+            /* Advance to the next chunk based on the actual returned
+             * geometry so we don't skip or overlap when Gqrx returns
+             * fewer bins than requested. */
+            next_off = (rs + (double)nv * rb) - start_hz;
+        }
+
+        if (chunk_ok && last_idx > 0)
+        {
+            for (int j = 0; j < last_idx; j++)
+                accum[j] += powf(10.0f, read_buf[j] / 10.0f);
+
+            (*out_n_valid)++;
+
+            if (*out_n_valid == 1)
+            {
+                *out_fs     = start_hz;
+                *out_fb     = (double)bw;
+                *out_fcount = last_idx;
+            }
+        }
+
+        free(read_buf);
+    }
+
+    return *out_n_valid > 0;
 }
 
 /* Scan the gaps between coarse-pass candidates at higher resolution
@@ -1599,8 +1772,8 @@ ScanFFTSecondPass(
     /* Read the full spectrum at fine resolution with multi-frame
      * averaging.  A single FFT frame can misrepresent a modulated
      * station that happens to be at a low point, or Gqrx may return
-     * data slightly misaligned.  5 reads × 50 ms delay, accumulating
-     * linear power, stabilises both issues. */
+     * data slightly misaligned.  ReadSpectrum handles chunking,
+     * alignment, and 5-read averaging internally. */
     int    fine_bw = fft_bw / 16;
     int    nbins   = (int)((q_end - q_start) / fine_bw) + 1;
     float *vals    = malloc((size_t)nbins * sizeof(float));
@@ -1612,36 +1785,11 @@ ScanFFTSecondPass(
         return;
     }
 
-    freq_t fc; double fs = 0, fe = 0, fb = 0;
-    int fn = 0, fcount = 0, n_valid = 0;
+    double fs = 0, fb = 0;
+    int    fcount = 0, n_valid = 0;
 
-    for (int r = 0; r < 5; r++)
-    {
-        if (r > 0)
-            usleep(50000);
-
-        int nv = 0;
-        float *tmp = malloc((size_t)nbins * sizeof(float));
-        if (!tmp)
-            continue;
-        if (GetFFTValuesPartial(sockfd, q_start, nbins, fine_bw,
-                                 tmp, nbins,
-                                 &fc, &fs, &fe, &fb, &fn, &nv) &&
-            nv > 0)
-        {
-            /* Verify the returned window covers what we asked for. */
-            if (fabs(fs - q_start) <= (double)fine_bw)
-            {
-                for (int j = 0; j < nv && j < nbins; j++)
-                    accum[j] += powf(10.0f, tmp[j] / 10.0f);
-                n_valid++;
-                fcount = nv;
-            }
-        }
-        free(tmp);
-    }
-
-    if (n_valid < 1)
+    if (!ReadSpectrum(sockfd, fine_bw, q_start, nbins, 5, FFT_CHUNK_BINS,
+                       accum, &fs, &fb, &fcount, &n_valid))
     {
         free(vals);
         free(accum);
@@ -1687,8 +1835,6 @@ ScanFFTSecondPass(
                 (double)fft_bw / 2.0 / fb,
                 fs, fb, lo,
                 freq_min, freq_max, has_range,
-                false,        /* no edge rejection for pre-first gap */
-                0, 0, 0,
                 &prev,
                 clusters, FFT_CLUSTER_MAX, *n_clusters + added);
 
@@ -1728,8 +1874,6 @@ ScanFFTSecondPass(
             (double)fft_bw / 2.0 / fb,
             fs, fb, lo,
             freq_min, freq_max, has_range,
-            false,        /* no edge rejection for between-gap */
-            0, 0, 0,
             &prev,
             clusters, FFT_CLUSTER_MAX, *n_clusters + added);
 
@@ -1766,8 +1910,6 @@ ScanFFTSecondPass(
                     (double)fft_bw / 2.0 / fb,
                     fs, fb, lo,
                     freq_min, freq_max, has_range,
-                    true,         /* reject FFT roll-off zone */
-                    q_start, q_end, fft_bw,
                     &prev,
                     clusters, FFT_CLUSTER_MAX, *n_clusters + added);
 
@@ -1810,6 +1952,7 @@ ScanFFTSecondPass(
 bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 {
     bool has_range = (freq_min != 0 || freq_max != 0);
+    bool user_range = has_range;
 
     double squelch = 0;
 
@@ -1898,6 +2041,30 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
                     fflush(stdout);
                 }
             }
+        }
+
+        /* When --min/--max were not specified, derive the scan range
+         * from the NCO-only safe zone.  Tuning beyond ±0.36 ×
+         * visible_span from the current centre would cause Gqrx to
+         * move the hardware LO, shifting the panadapter.  Recompute
+         * every cycle so user-initiated centre-frequency changes
+         * are tracked. */
+        if (!user_range)
+        {
+            freq_t visible_span = (freq_t)(q_end - q_start);
+            freq_t nco_safe_zone = (freq_t)(0.36 * (double)visible_span);
+
+            freq_t nco_min = (q_center > nco_safe_zone)
+                           ? q_center - nco_safe_zone : 0;
+            freq_t nco_max = q_center + nco_safe_zone;
+
+            freq_min = (freq_t)q_start;
+            freq_max = (freq_t)q_end;
+
+            if (nco_min > freq_min) freq_min = nco_min;
+            if (nco_max < freq_max) freq_max = nco_max;
+
+            has_range = (freq_max > freq_min);
         }
 
         //
@@ -3122,15 +3289,14 @@ int main(int argc, char **argv) {
     sockfd = Connect(opt_hostname, opt_port);
     g_sockfd = sockfd;
 
+    // Read the channel filter bandwidth for the step/merge default.
+    freq_t filter_bw = 12500;
+    GetFilterBandwidth(g_sockfd, &filter_bw);
+
     // If the user did not specify -s, default the step/merge distance to
     // the Gqrx channel filter bandwidth instead of the hardcoded 10 kHz.
-    // This applies to both sweep and FFT modes.
-    if (opt_scan_bw == g_default_scan_bw)
-    {
-        freq_t fb = 12500;
-        if (GetFilterBandwidth(g_sockfd, &fb) && fb >= 100)
-            opt_scan_bw = fb;
-    }
+    if (opt_scan_bw == g_default_scan_bw && filter_bw >= 100)
+        opt_scan_bw = filter_bw;
 
     if (!opt_tag_search) // sweep or bookmark
     {
@@ -3138,7 +3304,8 @@ int main(int argc, char **argv) {
         {
             freq_t current_freq;
             GetCurrentFreq(g_sockfd, &current_freq);
-            opt_min_freq = current_freq - g_freq_delta;
+            opt_min_freq = current_freq > g_freq_delta
+                         ? current_freq - g_freq_delta : 0;
             opt_max_freq = current_freq + g_freq_delta;
         }
     }
