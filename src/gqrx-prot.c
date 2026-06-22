@@ -738,3 +738,59 @@ bool GetFFTValuesPartial(int sockfd, double start_hz, int n_bins, int fft_bw,
     FreeResponse(&resp);
     return true;
 }
+
+//
+// CheckFFTSupport — send "FFT Q W:10000" to Gqrx and parse the response.
+// Returns true if Gqrx supports the FFT remote extension (newer builds),
+// false if the command fails (old Gqrx without the FFT extension).
+//
+bool CheckFFTSupport(void)
+{
+    freq_t center;
+    double start, end, bw;
+    int n, c;
+    return GetFFTParameters(g_sockfd, 10000,
+                            &center, &start, &end, &bw, &n, &c);
+}
+
+//
+// GetSafeRange — compute the intersection of the visible FFT spectrum
+// with the Gqrx NCO-only tuning safe zone.  The result is written to
+// *p_min and *p_max.  On failure (FFT Q unsupported) both are set to 0.
+//
+// The NCO safe zone half-span is GQRX_NCO_SAFE_RATIO × visible_span,
+// minus the demodulator filter passband/2 to guarantee that every
+// SetFreq lands within the NCO-only window (avoids HW LO movement).
+//
+void GetSafeRange(freq_t *p_min, freq_t *p_max, freq_t *p_center)
+{
+    freq_t center;
+    double start, end, bw;
+    int total, count;
+    if (!GetFFTParameters(g_sockfd, 10000, &center, &start, &end,
+                          &bw, &total, &count))
+    {
+        *p_min = 0;
+        *p_max = 0;
+        *p_center = 0;
+        return;
+    }
+
+    *p_center = center;
+
+    freq_t vis_span = (freq_t)(end - start);
+    freq_t safe_half = (freq_t)(GQRX_NCO_SAFE_RATIO * (double)vis_span);
+
+    freq_t filter_bw = 0;
+    if (GetFilterBandwidth(g_sockfd, &filter_bw) && filter_bw > 0)
+    {
+        freq_t passband_half = filter_bw / 2;
+        if (safe_half > passband_half)
+            safe_half -= passband_half;
+        else
+            safe_half = 0;
+    }
+
+    *p_min = (center > safe_half) ? center - safe_half : 0;
+    *p_max = center + safe_half;
+}

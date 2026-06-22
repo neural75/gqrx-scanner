@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2025 neural75
+Copyright (c) 2026 neural75
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -121,6 +121,7 @@ int             opt_port = 0;
 freq_t          opt_freq = 0;
 freq_t          opt_min_freq = 0;
 freq_t          opt_max_freq = 0;
+bool            has_range;
 freq_t          opt_scan_bw = g_default_scan_bw;
 long            opt_delay = 0; //LWVMOBILE: Changing this variable from 0 to 250 attempt to fix 'no delay argument given' stoppage on bookmark scan
 //LWVMOBILE: New variables inserted here
@@ -140,6 +141,8 @@ bool            opt_verbose = false;
 bool            opt_vox = false;
 long            opt_max_probe = 0;
 #endif
+
+bool            g_gqrx_supports_fft = false;
 
 int             g_sockfd = -1;
 bool            g_socket_dead = false;
@@ -700,6 +703,11 @@ void CheckUserInput (void)
                     pause ^= true; // switch pause mode
                     break;
                 }
+                case 'q':
+                {
+                    // quit
+                    exit(0);
+                }
                 default:
                     break;
             }
@@ -1246,6 +1254,7 @@ static int cmp_cluster_asc(const void *a, const void *b)
  * REFINE_EDGE_DB roll-off, and returns the midpoint (centre of the
  * modulated carrier).  Updates *candidate on success. */
 static bool RefineFFTPeak(int sockfd, freq_t *candidate,
+                           freq_t *out_center,
                            int radius_hz, int fine_bw_hz)
 {
     const int refine_n_reads = 5;
@@ -1405,26 +1414,33 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
         fflush(stdout);
     }
 
+    if (out_center)
+        *out_center = rc;
+
     free(accum);
     free(vals);
     return true;
 }
 
-/* Refine all candidates at the sweep-start FFT center before any
- * SetFreq.  Ensures every refinement reads the same consistent
- * spectrum — the receiver is not moved until the verify loop. */
+/* Fine-tune all candidate frequencies with sub-bin precision before
+ * any SetFreq moves the receiver.  Every refinement reads the same
+ * consistent spectrum at the sweep-start centre.
+ * If out_center is non-NULL, the F: from the last refine read
+ * is written to it (HW LO position, never the VFO frequency). */
 static void
-ScanFFTBatchRefine(
+FineTunePeaks(
     int             sockfd,
     fft_cluster_t  *clusters,
     int             n_clusters,
-    int             fft_bw)
+    int             filter_bw,
+    freq_t         *out_center)
 {
     for (int c = 0; c < n_clusters; c++)
     {
         freq_t coarse = clusters[c].peak_freq;
         RefineFFTPeak(sockfd, &clusters[c].peak_freq,
-                       fft_bw, fft_bw / 100);
+                       out_center,
+                       filter_bw, filter_bw / 100);
         if (opt_verbose && coarse != clusters[c].peak_freq)
         {
             printf("[FFT] refine %s -> %s\n",
@@ -1433,6 +1449,49 @@ ScanFFTBatchRefine(
             fflush(stdout);
         }
     }
+}
+
+/* Check whether the FFT centre has drifted from the sweep-time
+ * baseline.  Returns false (and prints a message) when the drift
+ * exceeds GQRX_CENTER_CHANGE_HZ, indicating the candidate list
+ * is stale and the caller should re-read the spectrum.
+ *
+ * When fft_center is non-zero the caller already has a fresh
+ * F: value — no extra I/O.  When 0, the function queries
+ * GetFFTParameters.  previous_center is set once per sweep by
+ * the caller at next_sweep:. */
+static bool
+VerifyCenterFrequency(int sockfd, int fft_bw,
+                      freq_t fft_center,
+                      freq_t previous_center)
+{
+    freq_t v_center = fft_center;
+
+    if (v_center == 0)
+    {
+        double dummy_s, dummy_e, dummy_b;
+        int dummy_n, dummy_c;
+
+        if (!GetFFTParameters(sockfd, fft_bw,
+                              &v_center, &dummy_s, &dummy_e,
+                              &dummy_b, &dummy_n, &dummy_c))
+            return true;   /* socket issue — let the caller handle it */
+    }
+
+    if (previous_center != 0 && v_center != previous_center)
+    {
+        freq_t drift = (v_center > previous_center)
+                     ? v_center - previous_center
+                     : previous_center - v_center;
+        if (drift >= GQRX_CENTER_CHANGE_HZ)
+        {
+            if (opt_verbose)
+                printf("[FFT] centre changed, aborting verify batch\n");
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /* Maximum number of FFT clusters (above-squelch contiguous regions)
@@ -1476,7 +1535,7 @@ ScanFFTBatchRefine(
  *   radius_bins  triangle half-width in bins, = fft_bw/2 / fb
  *   fs, fb       spectrum start (Hz) and bin width (Hz)
  *   lo           index offset into the parent vals[] array
- *   freq_min, freq_max, has_range   frequency range filter
+ *   freq_min, freq_max   frequency range filter
  *   prev         previous candidate freq (merge check)
  *   clusters, max_clusters  output array and its capacity
  *   write_idx    absolute index into clusters[] to write from
@@ -1487,7 +1546,7 @@ static int CleanDetectGap(
     double squelch_lin, double gap_min_db,
     double radius_bins,
     double fs, double fb, int lo,
-    freq_t freq_min, freq_t freq_max, bool has_range,
+    freq_t freq_min, freq_t freq_max,
     freq_t *prev,
     fft_cluster_t *clusters, int max_clusters,
     int write_idx)
@@ -1526,7 +1585,7 @@ static int CleanDetectGap(
          * candidate is later rejected (range, merge, ban). */
         for (int jj = 0; jj < gw; jj++)
         {
-            double d = fabs(jj - ml);
+            double d = abs(jj - ml);
             if (d < radius_bins)
             {
                 double contrib = mv * (1.0 - d / radius_bins);
@@ -1539,7 +1598,7 @@ static int CleanDetectGap(
             }
         }
 
-        if (has_range && (cf < freq_min || cf > freq_max))
+        if (cf < freq_min || cf > freq_max)
         {
             continue;
         }
@@ -1744,23 +1803,21 @@ static bool ReadSpectrum(
     return *out_n_valid > 0;
 }
 
-/* Scan the gaps between coarse-pass candidates at higher resolution
- * (fft_bw / 2) to detect stations that fall between filter-width bins
- * and are masked by adjacent strong signals.  The gap margins prevent
- * re-detecting the same station that was already found in the coarse
- * pass. */
+/* Scan gaps between coarse-pass candidates at fine resolution to
+ * collect peaks the coarse pass missed (stations between filter-width
+ * bins or masked by adjacent strong signals).  Gap margins prevent
+ * re-detecting stations already found in the coarse pass. */
 static void
-ScanFFTSecondPass(
+CollectFinePeaks(
     int             sockfd,
     fft_cluster_t  *clusters,
     int            *n_clusters,
     double          squelch,
     freq_t          freq_min,
     freq_t          freq_max,
-    bool            has_range,
-    double          q_start,
-    double          q_end,
-    int             fft_bw)
+    double          fft_start,
+    double          fft_end,
+    int             filter_bw)
 {
     if (*n_clusters <= 0)
         return;
@@ -1774,8 +1831,8 @@ ScanFFTSecondPass(
      * station that happens to be at a low point, or Gqrx may return
      * data slightly misaligned.  ReadSpectrum handles chunking,
      * alignment, and 5-read averaging internally. */
-    int    fine_bw = fft_bw / 16;
-    int    nbins   = (int)((q_end - q_start) / fine_bw) + 1;
+    int    fine_bw = filter_bw / 16;
+    int    nbins   = (int)((fft_end - fft_start) / fine_bw) + 1;
     float *vals    = malloc((size_t)nbins * sizeof(float));
     float *accum   = calloc((size_t)nbins, sizeof(float));
     if (!vals || !accum)
@@ -1788,7 +1845,7 @@ ScanFFTSecondPass(
     double fs = 0, fb = 0;
     int    fcount = 0, n_valid = 0;
 
-    if (!ReadSpectrum(sockfd, fine_bw, q_start, nbins, 5, FFT_CHUNK_BINS,
+    if (!ReadSpectrum(sockfd, fine_bw, fft_start, nbins, 5, FFT_CHUNK_BINS,
                        accum, &fs, &fb, &fcount, &n_valid))
     {
         free(vals);
@@ -1802,14 +1859,14 @@ ScanFFTSecondPass(
         vals[j] = 10.0f * log10f(accum[j] * inv_n + 1.0e-20f);
     free(accum);
 
-    freq_t half_bw = (freq_t)fft_bw / 2;
+    freq_t half_bw = (freq_t)filter_bw / 2;
     freq_t prev    = 0;
     int    added   = 0;
 
     /* Scan gap before the first coarse candidate. */
-    freq_t gap_lo = (freq_t)q_start;
+    freq_t gap_lo = (freq_t)fft_start;
     freq_t gap_hi = clusters[0].peak_freq > half_bw
-                    ? clusters[0].peak_freq - half_bw : (freq_t)q_start;
+                    ? clusters[0].peak_freq - half_bw : (freq_t)fft_start;
 
     if (gap_lo < gap_hi)
     {
@@ -1832,9 +1889,9 @@ ScanFFTSecondPass(
 
             added += CleanDetectGap(work, gw,
                 squelch_lin, gap_min,
-                (double)fft_bw / 2.0 / fb,
+                (double)filter_bw / 2.0 / fb,
                 fs, fb, lo,
-                freq_min, freq_max, has_range,
+                freq_min, freq_max,
                 &prev,
                 clusters, FFT_CLUSTER_MAX, *n_clusters + added);
 
@@ -1871,9 +1928,9 @@ ScanFFTSecondPass(
 
         added += CleanDetectGap(work, gw,
             squelch_lin, gap_min,
-            (double)fft_bw / 2.0 / fb,
+            (double)filter_bw / 2.0 / fb,
             fs, fb, lo,
-            freq_min, freq_max, has_range,
+            freq_min, freq_max,
             &prev,
             clusters, FFT_CLUSTER_MAX, *n_clusters + added);
 
@@ -1884,7 +1941,7 @@ ScanFFTSecondPass(
     if (*n_clusters + added < FFT_CLUSTER_MAX)
     {
         gap_lo = clusters[*n_clusters - 1].peak_freq + half_bw;
-        gap_hi = (freq_t)q_end;
+        gap_hi = (freq_t)fft_end;
 
         if (gap_lo < gap_hi)
         {
@@ -1907,9 +1964,9 @@ ScanFFTSecondPass(
 
                 added += CleanDetectGap(work, gw,
                     squelch_lin, gap_min,
-                    (double)fft_bw / 2.0 / fb,
+                    (double)filter_bw / 2.0 / fb,
                     fs, fb, lo,
-                    freq_min, freq_max, has_range,
+                    freq_min, freq_max,
                     &prev,
                     clusters, FFT_CLUSTER_MAX, *n_clusters + added);
 
@@ -1928,6 +1985,360 @@ ScanFFTSecondPass(
     }
 
     free(vals);
+}
+
+/* Sort + collapse clusters within opt_scan_bw of each other, keeping
+ * the higher peak.  This eliminates duplicates from adjacent coarse
+ * or fine bins that belong to the same station. */
+static void MergeClusters(fft_cluster_t *clusters, int *n_clusters, freq_t filter_bw)
+{
+    if (*n_clusters <= 1)
+        return;
+
+    qsort(clusters, (size_t)*n_clusters, sizeof(fft_cluster_t), cmp_cluster_asc);
+
+    int dst = 0;
+    for (int src = 1; src < *n_clusters; src++)
+    {
+        if (clusters[src].peak_freq >= clusters[dst].peak_freq &&
+            clusters[src].peak_freq - clusters[dst].peak_freq < filter_bw)
+        {
+            if (clusters[src].peak_level > clusters[dst].peak_level)
+                clusters[dst] = clusters[src];
+        }
+        else
+        {
+            dst++;
+            if (dst != src)
+                clusters[dst] = clusters[src];
+        }
+    }
+    *n_clusters = dst + 1;
+}
+
+/* Walk all FFT bins, identify contiguous above-squelch regions,
+ * find strict local maxima, compute topographic prominence, and emit
+ * candidates that pass range and banned-list filters. */
+static void CollectCoarsePeaks(
+    float          *values,
+    int             n_vals,
+    double          squelch,
+    freq_t          freq_min,
+    freq_t          freq_max,
+    double          fft_start,
+    double          fft_bin,
+    fft_cluster_t  *clusters,
+    int             max_clusters,
+    int            *n_clusters)
+{
+    int i = 0;
+    freq_t prev_candidate = 0;
+    *n_clusters = 0;
+
+    while (i < n_vals && *n_clusters < max_clusters)
+    {
+        if (values[i] < squelch)
+        {
+            i++;
+            continue;
+        }
+
+        /* Collect the contiguous above-squelch region */
+        int cs = i;
+        while (i < n_vals && values[i] >= squelch)
+            i++;
+        int ce = i;  // exclusive
+
+        if (opt_verbose)
+        {
+            double bin_freq = fft_start + (double)cs * fft_bin;
+            printf("[FFT] cluster starts at bin[%d] freq=%.0f val=%.1f sq=%.1f\n",
+                   cs, bin_freq, (double)values[cs], squelch);
+            fflush(stdout);
+        }
+
+        /* Find all local maxima within [cs, ce).  A bin is a local
+         * maximum when it is strictly higher than both neighbours;
+         * this prevents flat/plateau regions from emitting multiple
+         * candidates. */
+        int locmax_idx[max_clusters];
+        double locmax_level[max_clusters];
+        int n_locmax = 0;
+
+        for (int j = cs; j < ce && n_locmax < max_clusters; j++)
+        {
+            bool left_ok  = (j == cs)      || (double)values[j] > (double)values[j-1];
+            bool right_ok = (j == ce - 1)  || (double)values[j] > (double)values[j+1];
+            if (left_ok && right_ok)
+            {
+                locmax_idx[n_locmax]   = j;
+                locmax_level[n_locmax] = (double)values[j];
+                n_locmax++;
+            }
+        }
+
+        /* If the region is monotonic (no local maxima), fall back to
+         * emitting the single strongest bin. */
+        if (n_locmax < 1)
+        {
+            int best_j = cs;
+            double best_val = (double)values[cs];
+            for (int j = cs + 1; j < ce; j++)
+            {
+                double v = (double)values[j];
+                if (v > best_val)
+                {
+                    best_val = v;
+                    best_j = j;
+                }
+            }
+            locmax_idx[0]   = best_j;
+            locmax_level[0] = best_val;
+            n_locmax = 1;
+        }
+
+        /* Emit one candidate per local maximum whose topographic
+         * prominence (drop to the shallower adjacent valley) exceeds
+         * FFT_PEAK_PROMINENCE_DB.  3 dB rejects noise bumps while
+         * easily passing real FM stations separated by 400+ kHz. */
+        for (int p = 0; p < n_locmax; p++)
+        {
+            int   midx = locmax_idx[p];
+            double pk  = locmax_level[p];
+
+            /* Deepest valley between this peak and the adjacent peak
+             * (or the cluster edge if first/last in the region).
+             * Initialise to squelch — for a peak at the cluster edge
+             * the valley outside is below the squelch threshold, so
+             * squelch is the natural floor.
+             *
+             * When squelch is set far below the actual spectrum
+             * (e.g. -150 dBFS to disable squelch), this default
+             * inflates prominence for every noise bump.  As a
+             * safety net, peek at the bin just outside the cluster
+             * boundary and use it if it is higher (less negative)
+             * than squelch, giving us the real noise floor. */
+            int left_bound = (p > 0) ? locmax_idx[p-1] : cs;
+            double min_left = squelch;
+            for (int j = left_bound; j < midx; j++)
+            {
+                double v = (double)values[j];
+                if (v < min_left)
+                    min_left = v;
+            }
+            if (p == 0 && cs == midx && cs > 0)
+            {
+                double edge = (double)values[cs - 1];
+                if (edge > min_left)
+                    min_left = edge;
+            }
+
+            /* Deepest valley to the right. */
+            int right_bound = (p < n_locmax - 1) ? locmax_idx[p+1] : ce - 1;
+            double min_right = squelch;
+            for (int j = midx + 1; j <= right_bound; j++)
+            {
+                double v = (double)values[j];
+                if (v < min_right)
+                    min_right = v;
+            }
+            if (p == n_locmax - 1 && ce - 1 == midx && ce < n_vals)
+            {
+                double edge = (double)values[ce];
+                if (edge > min_right)
+                    min_right = edge;
+            }
+
+            /* Key col = shallower of the two valleys (higher minimum).
+             * Prominence = peak level above the key col. */
+            double key_col = (min_left > min_right) ? min_left : min_right;
+            double prominence = pk - key_col;
+
+            if (prominence < FFT_PEAK_PROMINENCE_DB)
+            {
+                if (opt_verbose)
+                {
+                    printf("[FFT] skip peak at bin[%d] %.0f Hz"
+                           " (prominence %.1f dB < %.0f dB)\n",
+                           midx, fft_start + (double)midx * fft_bin,
+                           prominence, FFT_PEAK_PROMINENCE_DB);
+                    fflush(stdout);
+                }
+                continue;
+            }
+
+            freq_t candidate = (freq_t)((fft_start + (double)midx * fft_bin)
+                                        / 1000.0 + 0.5) * 1000;
+
+            if (candidate < freq_min || candidate > freq_max)
+            {
+                if (opt_verbose)
+                    printf("[FFT] skip out-of-range %s (%.0f-%.0f)\n",
+                           print_freq(candidate),
+                           (double)freq_min, (double)freq_max);
+                continue;
+            }
+
+            if (prev_candidate != 0 &&
+                (candidate > prev_candidate ?
+                 candidate - prev_candidate :
+                 prev_candidate - candidate) < opt_scan_bw)
+            {
+                if (opt_verbose)
+                {
+                    printf("[FFT] merge skip %s (prev=%s, dist < %llu)\n",
+                           print_freq(candidate),
+                           print_freq(prev_candidate),
+                           opt_scan_bw);
+                    fflush(stdout);
+                }
+                continue;
+            }
+            prev_candidate = candidate;
+
+            if (IsBannedFreq(&candidate))
+            {
+                if (opt_verbose)
+                {
+                    printf("[FFT] candidate %s banned, skipping\n",
+                           print_freq(candidate));
+                    fflush(stdout);
+                }
+                continue;
+            }
+
+            clusters[*n_clusters].peak_freq   = candidate;
+            clusters[*n_clusters].peak_level  = pk;
+            (*n_clusters)++;
+        }
+    }
+}
+
+/* Tune to each candidate in descending peak-level order, verifying
+ * with the audio-path signal level.  Saves/records/writes hits.
+ * squelch is re-read per candidate and updated in-place.
+ * Returns true if at least one candidate was accepted.
+ * Returns early with partial results if the centre changed. */
+static bool ProcessCandidates(
+    int             sockfd,
+    fft_cluster_t  *clusters,
+    int             n_clusters,
+    double         *squelch,
+    freq_t          freq_min,
+    freq_t          freq_max,
+    freq_t          previous_center,
+    int             filter_bw)
+{
+    bool found_any = false;
+
+    for (int c = 0; c < n_clusters; c++)
+    {
+        freq_t  candidate  = clusters[c].peak_freq;
+        double  peak_level = clusters[c].peak_level;
+
+        CheckUserInput();
+        if (g_socket_dead)
+            break;
+
+        if (candidate < freq_min || candidate > freq_max)
+            continue;
+
+        /* Verify the FFT centre has not drifted since the sweep
+         * (user retuned the HW LO).  If it has, the candidate list
+         * is stale — abort this batch before tuning. */
+        if (!VerifyCenterFrequency(sockfd, filter_bw, 0, previous_center))
+            return found_any;
+
+        found_any = true;
+
+        if (opt_verbose)
+        {
+            printf("[FFT] tuning to %s for verify\n",
+                   print_freq(candidate));
+            fflush(stdout);
+        }
+
+        SetFreq(sockfd, candidate);
+        usleep(g_settle_time_us);
+
+        /* Re-read the squelch level for each candidate so the user can
+         * adjust it on the Gqrx GUI during a long verify chain.
+         * Without this, a sweep that started with squelch = -150
+         * (wide open) would accept noise peaks for every candidate. */
+        GetSquelchLevel(sockfd, squelch);
+
+        double level = 0;
+        GetSignalLevelEx(sockfd, &level, 5, false);
+
+        if (opt_verbose)
+        {
+            printf("[FFT] verify %s fft_peak=%.1f audio_level=%.1f sq=%.1f %s\n",
+                   print_freq(candidate), peak_level,
+                   level, *squelch,
+                   (level >= *squelch) ? "ACCEPT" : "REJECT");
+            fflush(stdout);
+        }
+
+        if (level < *squelch)
+        {
+            // FFT saw something during the sweep but the audio path
+            // disagrees — false positive, skip.
+            continue;
+        }
+
+        if (opt_record)
+            StartRecording(sockfd);
+
+        SaveFreq(candidate);
+
+        char timestamp[BUFSIZE] = {0};
+        time_t hit_time = GetTime(timestamp);
+        printf("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
+               timestamp, print_freq(candidate),
+               peak_level, *squelch);
+        fflush(stdout);
+
+        freq_t dummy_freq = candidate;
+        WaitUserInputOrDelay(opt_delay, &dummy_freq);
+
+        time_t elapsed = DiffTime(timestamp, hit_time);
+        if (opt_record)
+            StopRecording(sockfd);
+        printf(" [elapsed time %s]\n", timestamp);
+        fflush(stdout);
+
+        /* Process remaining candidates from this sweep.  Each
+         * iteration refines and verifies independently — the
+         * coarse candidate list is from the original sweep but
+         * refinement and audio verify are fresh per candidate.
+         * Press 'q' (checked in the outer while loop) to quit. */
+    }
+
+    return found_any;
+}
+
+/* Sort candidates by peak level descending so the strongest signals
+ * are verified first.  Prints the candidate list if opt_verbose. */
+static void SortCandidatesByLevel(
+    fft_cluster_t *clusters,
+    int n_clusters,
+    double squelch)
+{
+    qsort(clusters, (size_t)n_clusters, sizeof(fft_cluster_t), cmp_cluster_desc);
+
+    if (opt_verbose && n_clusters > 0)
+    {
+        printf("[FFT] %d candidates (bins >= %.1f dBFS):\n",
+               n_clusters, squelch);
+        for (int c = 0; c < n_clusters; c++)
+        {
+            printf("  #%d  %s  peak=%.1f dBFS\n",
+                   c + 1,
+                   print_freq(clusters[c].peak_freq),
+                   clusters[c].peak_level);
+        }
+        fflush(stdout);
+    }
 }
 
 //
@@ -1951,25 +2362,20 @@ ScanFFTSecondPass(
 //
 bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 {
-    bool has_range = (freq_min != 0 || freq_max != 0);
-    bool user_range = has_range;
-
     double squelch = 0;
 
     // Use the channel filter bandwidth as the FFT pooled-bin width.
-    freq_t filter_bw = 12500;
-    if (!GetFilterBandwidth(g_sockfd, &filter_bw) || filter_bw < 100)
-        filter_bw = 12500;
-    int fft_bw = (int)filter_bw;
+    freq_t filter_bw = 10000;
+    GetFilterBandwidth(g_sockfd, &filter_bw);
 
     // Query FFT parameters to get visible spectrum geometry
-    freq_t q_center = 0;
-    double q_start = 0, q_end = 0, q_bw = 0;
-    int q_total = 0, q_count = 0;
+    freq_t fft_center = 0;
+    double fft_start = 0, fft_end = 0, fft_bin = 0;
+    int fft_total = 0, fft_count = 0;
 
-    if (!GetFFTParameters(g_sockfd, fft_bw,
-                          &q_center, &q_start, &q_end,
-                          &q_bw, &q_total, &q_count))
+    if (!GetFFTParameters(g_sockfd, filter_bw,
+                          &fft_center, &fft_start, &fft_end,
+                          &fft_bin, &fft_total, &fft_count))
     {
         fprintf(stderr, "Error: Gqrx does not support the FFT extension.\n");
         return false;
@@ -1978,12 +2384,12 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
     if (opt_verbose)
     {
         printf("[FFT] initial params: F=%llu S=%.0f E=%.0f B=%.4f N=%d filter_bw=%llu\n",
-               q_center, q_start, q_end, q_bw, q_total, filter_bw);
+               fft_center, fft_start, fft_end, fft_bin, fft_total, filter_bw);
         fflush(stdout);
     }
 
     // Allocate values array
-    int max_bins = q_total;
+    int max_bins = fft_total;
     float *values = malloc((size_t)max_bins * sizeof(float));
     if (!values)
     {
@@ -1991,8 +2397,17 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
         return false;
     }
 
+    freq_t previous_center = 0;
+    bool found_any = false;
+
     while (true)
     {
+        /* Save this sweep's centre as the baseline for the next cycle. */
+        previous_center = fft_center;
+
+        // Let the FFT update cycle flush stale data before the next sweep.
+        usleep(found_any ? g_settle_time_us : GQRX_FFT_UPDATE_US);
+        found_any = false;
 #ifdef TESTING_BUILD
         if (g_testing_max_full_sweeps >= 0 &&
             g_testing_sweep_full_count >= g_testing_max_full_sweeps)
@@ -2010,74 +2425,38 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
         // receiver tuning on the Gqrx GUI.
         //
         GetSquelchLevel(g_sockfd, &squelch);
+        filter_bw = 10000;
+        GetFilterBandwidth(g_sockfd, &filter_bw);
 
-        freq_t new_bw = 12500;
-        if (GetFilterBandwidth(g_sockfd, &new_bw) && new_bw >= 100 && new_bw != filter_bw)
+        if (GetFFTParameters(g_sockfd, filter_bw,
+                             &fft_center, &fft_start, &fft_end,
+                             &fft_bin, &fft_total, &fft_count))
         {
-            filter_bw = new_bw;
-            fft_bw = (int)filter_bw;
-
-            freq_t nq_c; double nq_s = 0, nq_e = 0, nq_b = 0;
-            int nq_t = 0, nq_c2 = 0;
-            if (GetFFTParameters(g_sockfd, fft_bw,
-                                 &nq_c, &nq_s, &nq_e, &nq_b, &nq_t, &nq_c2))
+            if (fft_total > max_bins)
             {
-                if (nq_t > max_bins)
+                float *nv = realloc(values, (size_t)fft_total * sizeof(float));
+                if (nv)
                 {
-                    float *nv = realloc(values, (size_t)nq_t * sizeof(float));
-                    if (nv)
-                    {
-                        values = nv;
-                        max_bins = nq_t;
-                    }
-                }
-                q_center = nq_c; q_start = nq_s; q_end = nq_e;
-                q_bw = nq_b; q_total = nq_t; q_count = nq_c2;
-
-                if (opt_verbose)
-                {
-                    printf("[FFT] params updated: filter_bw=%llu F=%llu B=%.4f N=%d\n",
-                           filter_bw, q_center, q_bw, q_total);
-                    fflush(stdout);
+                    values = nv;
+                    max_bins = fft_total;
                 }
             }
-        }
 
-        /* When --min/--max were not specified, derive the scan range
-         * from the NCO-only safe zone.  Tuning beyond ±0.36 ×
-         * visible_span from the current centre would cause Gqrx to
-         * move the hardware LO, shifting the panadapter.  Recompute
-         * every cycle so user-initiated centre-frequency changes
-         * are tracked. */
-        if (!user_range)
-        {
-            freq_t visible_span = (freq_t)(q_end - q_start);
-            freq_t nco_safe_zone = (freq_t)(0.36 * (double)visible_span);
-
-            freq_t nco_min = (q_center > nco_safe_zone)
-                           ? q_center - nco_safe_zone : 0;
-            freq_t nco_max = q_center + nco_safe_zone;
-
-            freq_min = (freq_t)q_start;
-            freq_max = (freq_t)q_end;
-
-            if (nco_min > freq_min) freq_min = nco_min;
-            if (nco_max < freq_max) freq_max = nco_max;
-
-            has_range = (freq_max > freq_min);
+            if (opt_verbose)
+            {
+                printf("[FFT] params updated: filter_bw=%llu F=%llu B=%.4f N=%d\n",
+                       filter_bw, fft_center, fft_bin, fft_total);
+                fflush(stdout);
+            }
         }
 
         //
         // Read the full visible spectrum at the current frequency.
         //
-        freq_t  resp_center = 0;
-        double  resp_S = 0, resp_E = 0, resp_B = 0;
-        int     resp_N = 0, resp_C = 0;
-
-        if (!GetFFTValues(g_sockfd, fft_bw,
+        if (!GetFFTValues(g_sockfd, filter_bw,
                           values, max_bins,
-                          &resp_center, &resp_S, &resp_E,
-                          &resp_B, &resp_N, &resp_C))
+                          &fft_center, &fft_start, &fft_end,
+                          &fft_bin, &fft_total, &fft_count))
         {
             if (opt_verbose)
                 printf("[FFT] read error\n");
@@ -2087,375 +2466,93 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
             continue;
         }
 
-        if (resp_C <= 0)
+        if (fft_count <= 0)
         {
             usleep(100000);
             continue;
         }
 
+        /* Update the NCO safe range based on Gqrx's current center.
+         * This runs once per sweep before any SetFreq changes the
+         * tune — only the sweep-level FFT Q is authoritative. */
+        if (!has_range)
+        {
+            freq_t new_min = 0, new_max = 0;
+            GetSafeRange(&new_min, &new_max, &fft_center);
+            if (new_max > new_min)
+            {
+                freq_min = new_min;
+                freq_max = new_max;
+            }
+            else
+            {
+                /* GetSafeRange failed (FFT Q unavailable).  Fall back to
+                 * the full visible spectrum — no NCO zone protection,
+                 * but better than filtering every candidate to zero. */
+                freq_min = (freq_t)fft_start;
+                freq_max = (freq_t)fft_end;
+            }
+        }
+
+        /* Verify the FFT centre has not drifted from the sweep
+         * baseline (uses the fresh FFT V center — no extra I/O). */
+        if (!VerifyCenterFrequency(g_sockfd, filter_bw,
+                                     fft_center, previous_center))
+            continue;
+
         if (opt_verbose)
         {
             printf("[FFT] F=%llu S=%.0f E=%.0f B=%.4f C=%d first=%.1f last=%.1f\n",
-                   resp_center, resp_S, resp_E, resp_B, resp_C,
-                   values[0], values[resp_C-1]);
+                   fft_center, fft_start, fft_end, fft_bin, fft_count,
+                   values[0], values[fft_count-1]);
             fflush(stdout);
         }
 
         //
-        // First pass: collect all clusters from the sweep. Clusters are
-        // consecutive bins whose level is at or above the squelch threshold.
-        // Within each cluster all distinct local maxima (separated by a
-        // valley deeper than FFT_PEAK_PROMINENCE_DB) are emitted as separate
-        // candidates.
+        // First pass: collect coarse peaks from the sweep spectrum.
         //
         fft_cluster_t clusters[FFT_CLUSTER_MAX];
         int n_clusters = 0;
-        int i = 0;
-        freq_t prev_candidate = 0;
 
-        while (i < resp_C && n_clusters < FFT_CLUSTER_MAX)
-        {
-            if (values[i] < squelch)
-            {
-                i++;
-                continue;
-            }
-
-            /* Collect the contiguous above-squelch region */
-            int cs = i;
-            while (i < resp_C && values[i] >= squelch)
-                i++;
-            int ce = i;  // exclusive
-
-            if (opt_verbose)
-            {
-                double bin_freq = resp_S + (double)cs * resp_B;
-                printf("[FFT] cluster starts at bin[%d] freq=%.0f val=%.1f sq=%.1f\n",
-                       cs, bin_freq, (double)values[cs], squelch);
-                fflush(stdout);
-            }
-
-            /* Find all local maxima within [cs, ce).  A bin is a local
-             * maximum when it is strictly higher than both neighbours;
-             * this prevents flat/plateau regions from emitting multiple
-             * candidates. */
-            int locmax_idx[FFT_CLUSTER_MAX];
-            double locmax_level[FFT_CLUSTER_MAX];
-            int n_locmax = 0;
-
-            for (int j = cs; j < ce && n_locmax < FFT_CLUSTER_MAX; j++)
-            {
-                bool left_ok  = (j == cs)      || (double)values[j] > (double)values[j-1];
-                bool right_ok = (j == ce - 1)  || (double)values[j] > (double)values[j+1];
-                if (left_ok && right_ok)
-                {
-                    locmax_idx[n_locmax]   = j;
-                    locmax_level[n_locmax] = (double)values[j];
-                    n_locmax++;
-                }
-            }
-
-            /* If the region is monotonic (no local maxima), fall back to
-             * emitting the single strongest bin. */
-            if (n_locmax < 1)
-            {
-                int best_j = cs;
-                double best_val = (double)values[cs];
-                for (int j = cs + 1; j < ce; j++)
-                {
-                    double v = (double)values[j];
-                    if (v > best_val)
-                    {
-                        best_val = v;
-                        best_j = j;
-                    }
-                }
-                locmax_idx[0]   = best_j;
-                locmax_level[0] = best_val;
-                n_locmax = 1;
-            }
-
-            /* Emit one candidate per local maximum whose topographic
-             * prominence (drop to the shallower adjacent valley) exceeds
-             * FFT_PEAK_PROMINENCE_DB.  6 dB rejects noise bumps while
-             * easily passing real FM stations separated by 400+ kHz. */
-            for (int p = 0; p < n_locmax; p++)
-            {
-                int   midx = locmax_idx[p];
-                double pk  = locmax_level[p];
-
-                /* Deepest valley between this peak and the adjacent peak
-                 * (or the cluster edge if first/last in the region).
-                 * Initialise to squelch — for a peak at the cluster edge
-                 * the valley outside is below the squelch threshold, so
-                 * squelch is the natural floor.
-                 *
-                 * When squelch is set far below the actual spectrum
-                 * (e.g. -150 dBFS to disable squelch), this default
-                 * inflates prominence for every noise bump.  As a
-                 * safety net, peek at the bin just outside the cluster
-                 * boundary and use it if it is higher (less negative)
-                 * than squelch, giving us the real noise floor. */
-                int left_bound = (p > 0) ? locmax_idx[p-1] : cs;
-                double min_left = squelch;
-                for (int j = left_bound; j < midx; j++)
-                {
-                    double v = (double)values[j];
-                    if (v < min_left)
-                        min_left = v;
-                }
-                if (p == 0 && cs == midx && cs > 0)
-                {
-                    double edge = (double)values[cs - 1];
-                    if (edge > min_left)
-                        min_left = edge;
-                }
-
-                /* Deepest valley to the right. */
-                int right_bound = (p < n_locmax - 1) ? locmax_idx[p+1] : ce - 1;
-                double min_right = squelch;
-                for (int j = midx + 1; j <= right_bound; j++)
-                {
-                    double v = (double)values[j];
-                    if (v < min_right)
-                        min_right = v;
-                }
-                if (p == n_locmax - 1 && ce - 1 == midx && ce < resp_C)
-                {
-                    double edge = (double)values[ce];
-                    if (edge > min_right)
-                        min_right = edge;
-                }
-
-                /* Key col = shallower of the two valleys (higher minimum).
-                 * Prominence = peak level above the key col. */
-                double key_col = (min_left > min_right) ? min_left : min_right;
-                double prominence = pk - key_col;
-
-                if (prominence < FFT_PEAK_PROMINENCE_DB)
-                {
-                    if (opt_verbose)
-                    {
-                        printf("[FFT] skip peak at bin[%d] %.0f Hz"
-                               " (prominence %.1f dB < %.0f dB)\n",
-                               midx, resp_S + (double)midx * resp_B,
-                               prominence, FFT_PEAK_PROMINENCE_DB);
-                        fflush(stdout);
-                    }
-                    continue;
-                }
-
-                freq_t candidate = (freq_t)((resp_S + (double)midx * resp_B)
-                                            / 1000.0 + 0.5) * 1000;
-
-                if (has_range && (candidate < freq_min || candidate > freq_max))
-                {
-                    if (opt_verbose)
-                        printf("[FFT] skip out-of-range %s (%.0f-%.0f)\n",
-                               print_freq(candidate),
-                               (double)freq_min, (double)freq_max);
-                    continue;
-                }
-
-                if (prev_candidate != 0 &&
-                    (candidate > prev_candidate ?
-                     candidate - prev_candidate :
-                     prev_candidate - candidate) < opt_scan_bw)
-                {
-                    if (opt_verbose)
-                    {
-                        printf("[FFT] merge skip %s (prev=%s, dist < %llu)\n",
-                               print_freq(candidate),
-                               print_freq(prev_candidate),
-                               opt_scan_bw);
-                        fflush(stdout);
-                    }
-                    continue;
-                }
-                prev_candidate = candidate;
-
-                if (IsBannedFreq(&candidate))
-                {
-                    if (opt_verbose)
-                    {
-                        printf("[FFT] candidate %s banned, skipping\n",
-                               print_freq(candidate));
-                        fflush(stdout);
-                    }
-                    continue;
-                }
-
-                clusters[n_clusters].peak_freq   = candidate;
-                clusters[n_clusters].peak_level  = pk;
-                n_clusters++;
-            }
-
-        }
-
-        ScanFFTSecondPass(
-            g_sockfd,
-            clusters, &n_clusters,
-            squelch,
-            freq_min, freq_max, has_range,
-            q_start, q_end,
-            fft_bw);
+        CollectCoarsePeaks(values, fft_count, squelch, freq_min, freq_max,
+                           fft_start, fft_bin,
+                           clusters, FFT_CLUSTER_MAX, &n_clusters);
 
         //
-        // Merge coarse + fine candidates: sort by frequency and
-        // collapse any two within opt_scan_bw of each other, keeping
-        // the one with the higher peak level.  This eliminates
-        // duplicates from the same station that appear as separate
-        // local maxima in adjacent coarse/fine bins.
+        // Second pass: collect peaks missed by the coarse pass.
         //
-        if (n_clusters > 1)
-        {
-            qsort(clusters, (size_t)n_clusters, sizeof(fft_cluster_t),
-                  cmp_cluster_asc);
-            int dst = 0;
-            for (int src = 1; src < n_clusters; src++)
-            {
-                if (clusters[src].peak_freq >= clusters[dst].peak_freq &&
-                    clusters[src].peak_freq - clusters[dst].peak_freq < opt_scan_bw)
-                {
-                    if (clusters[src].peak_level > clusters[dst].peak_level)
-                        clusters[dst] = clusters[src];
-                }
-                else
-                {
-                    dst++;
-                    if (dst != src)
-                        clusters[dst] = clusters[src];
-                }
-            }
-            n_clusters = dst + 1;
-        }
+        CollectFinePeaks(g_sockfd, clusters, &n_clusters, squelch,
+                         freq_min, freq_max, fft_start, fft_end, filter_bw);
 
         //
-        // Batch-refine all candidates at the sweep-start FFT center
-        // before any SetFreq moves the receiver.
+        // Merge coarse and fine candidates within the FFT bin width.
         //
-        ScanFFTBatchRefine(g_sockfd, clusters, n_clusters, fft_bw);
-
-        //
-        // Sort clusters by peak level descending so that the strongest
-        // signals are verified first (before intermittent transmissions
-        // end during long verify chains of weaker clusters).
-        //
-        qsort(clusters, (size_t)n_clusters, sizeof(fft_cluster_t),
-              cmp_cluster_desc);
-
-        if (opt_verbose && n_clusters > 0)
-        {
-            printf("[FFT] %d candidates (bins >= %.1f dBFS):\n",
-                   n_clusters, squelch);
-            for (int c = 0; c < n_clusters; c++)
-            {
-                printf("  #%d  %s  peak=%.1f dBFS\n",
-                       c + 1,
-                       print_freq(clusters[c].peak_freq),
-                       clusters[c].peak_level);
-            }
-            fflush(stdout);
-        }
+        MergeClusters(clusters, &n_clusters, filter_bw);
 
         //
-        // Second pass: verify each cluster in order of descending
-        // peak level (strongest first).
+        // Fine-tune all candidate frequencies with sub-bin precision.
         //
-        bool found_any = false;
+        FineTunePeaks(g_sockfd, clusters, n_clusters, filter_bw,
+                      &fft_center);
 
-        for (int c = 0; c < n_clusters; c++)
-        {
-            freq_t  candidate  = clusters[c].peak_freq;
-            double  peak_level = clusters[c].peak_level;
+        /* Verify the FFT centre hasn't drifted during refinement.
+         * Uses the updated centre from the last refine FFT read
+         * (zero extra I/O).  previous_center is the sweep baseline. */
+        if (!VerifyCenterFrequency(g_sockfd, filter_bw,
+                                     fft_center, previous_center))
+            continue;
 
-            CheckUserInput();
-            if (g_socket_dead)
-                break;
+        //
+        // Sort candidates by peak level descending.
+        //
+        SortCandidatesByLevel(clusters, n_clusters, squelch);
 
-            //
-            // Tune and verify with the audio-path signal level.
-            //
-            if (has_range && (candidate < freq_min || candidate > freq_max))
-                continue;
-
-            found_any = true;
-
-            if (opt_verbose)
-            {
-                printf("[FFT] tuning to %s for verify\n",
-                       print_freq(candidate));
-                fflush(stdout);
-            }
-            if (has_range && (candidate < freq_min || candidate > freq_max))
-                continue;
-
-            SetFreq(g_sockfd, candidate);
-            usleep(g_settle_time_us);
-
-            /* Re-read the squelch level for each candidate so the user can
-             * adjust it on the Gqrx GUI during a long verify chain.
-             * Without this, a sweep that started with squelch = -150
-             * (wide open) would accept noise peaks for every candidate. */
-            GetSquelchLevel(g_sockfd, &squelch);
-
-            double level = 0;
-            GetSignalLevelEx(g_sockfd, &level, 5, false);
-
-            if (opt_verbose)
-            {
-                printf("[FFT] verify %s fft_peak=%.1f audio_level=%.1f sq=%.1f %s\n",
-                       print_freq(candidate), peak_level,
-                       level, squelch,
-                       (level >= squelch) ? "ACCEPT" : "REJECT");
-                fflush(stdout);
-            }
-
-            if (level < squelch)
-            {
-                // FFT saw something during the sweep but the audio path
-                // disagrees — false positive, skip.
-                continue;
-            }
-
-            if (opt_record)
-                StartRecording(g_sockfd);
-
-            SaveFreq(candidate);
-
-            char timestamp[BUFSIZE] = {0};
-            time_t hit_time = GetTime(timestamp);
-            printf("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
-                   timestamp, print_freq(candidate),
-                   peak_level, squelch);
-            fflush(stdout);
-
-            freq_t dummy_freq = candidate;
-            WaitUserInputOrDelay(opt_delay, &dummy_freq);
-
-            time_t elapsed = DiffTime(timestamp, hit_time);
-            if (opt_record)
-                StopRecording(g_sockfd);
-            printf(" [elapsed time %s]\n", timestamp);
-            fflush(stdout);
-
-            /* Process remaining candidates from this sweep.  Each
-             * iteration refines and verifies independently — the
-             * coarse candidate list is from the original sweep but
-             * refinement and audio verify are fresh per candidate.
-             * Press 'q' (checked in the outer while loop) to quit. */
-        }
-
-        // Let the FFT update cycle flush stale data before the next sweep.
-        // When nothing was found or after leaving a held carrier, wait for
-        // the Gqrx FFT pipeline to advance its read pointer so the next
-        // GetFFTValues returns a fresh spectrum.
-        if (found_any)
-            usleep(g_settle_time_us);
-        else
-            usleep(GQRX_FFT_UPDATE_US);
-
-
+        //
+        // Final pass: verify and save each candidate.
+        //
+        found_any = ProcessCandidates(
+            g_sockfd, clusters, n_clusters, &squelch,
+            freq_min, freq_max, previous_center, filter_bw);
     }
 
     free(values);
@@ -3237,6 +3334,7 @@ int main(int argc, char **argv) {
     opt_port     = g_portno;
     opt_delay    = g_delay;
     ParseInputOptions(argc, argv);
+    has_range = (opt_min_freq != 0 || opt_max_freq != 0);
 
 #ifndef OSX
     if (opt_vox)
@@ -3271,9 +3369,9 @@ int main(int argc, char **argv) {
     char from[256], to[256];
 
     if (
-        (opt_min_freq > opt_max_freq)                        || // bad range or only min specified
-        (opt_min_freq == 0 && opt_max_freq > 0)              || // or  only max specified
-        ((opt_min_freq != 0 && opt_max_freq != 0) &&            // or they are equal but different from 0
+        (opt_min_freq > opt_max_freq)             || // bad range or only min specified
+        (opt_min_freq == 0 && opt_max_freq > 0)   || // or  only max specified
+        ((opt_min_freq != 0 && opt_max_freq != 0) && // or they are equal but different from 0
          (opt_min_freq == opt_max_freq)                  )
        ) // or only max specified
     {
@@ -3290,7 +3388,7 @@ int main(int argc, char **argv) {
     g_sockfd = sockfd;
 
     // Read the channel filter bandwidth for the step/merge default.
-    freq_t filter_bw = 12500;
+    freq_t filter_bw = 10000;
     GetFilterBandwidth(g_sockfd, &filter_bw);
 
     // If the user did not specify -s, default the step/merge distance to
@@ -3298,9 +3396,16 @@ int main(int argc, char **argv) {
     if (opt_scan_bw == g_default_scan_bw && filter_bw >= 100)
         opt_scan_bw = filter_bw;
 
-    if (!opt_tag_search) // sweep or bookmark
+    g_gqrx_supports_fft = CheckFFTSupport();
+    
+    if (opt_min_freq == 0 && opt_max_freq == 0)
     {
-        if (opt_min_freq == 0 && opt_max_freq == 0 && opt_scan_mode != fft)
+        if (g_gqrx_supports_fft)
+        {
+            freq_t fft_center;
+            GetSafeRange(&opt_min_freq, &opt_max_freq, &fft_center);
+        }
+        else if (opt_scan_mode != fft)
         {
             freq_t current_freq;
             GetCurrentFreq(g_sockfd, &current_freq);
@@ -3308,20 +3413,16 @@ int main(int argc, char **argv) {
                          ? current_freq - g_freq_delta : 0;
             opt_max_freq = current_freq + g_freq_delta;
         }
-    }
-    else
-    {
-        // more tollerating with tags (bookmark mode)
-        if (opt_min_freq == opt_max_freq) // user has not set values or has set equals.
+        else 
         {
-            printf ("Warning: search tags on the entire frequency range!\n");
+            printf ("Error: Gqrx does not support FFT mode (yet).\n");
+            print_usage(argv[0]);
         }
-
     }
-
-    if (opt_scan_mode == bookmark)
+    else if (opt_tag_search && opt_min_freq == opt_max_freq)
     {
-        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
+        /* Tag search without a range — warning only. */
+        printf ("Warning: search tags on the entire frequency range!\n");
     }
 
     strcpy (from, print_freq(opt_min_freq));
@@ -3330,6 +3431,7 @@ int main(int argc, char **argv) {
 
     if (opt_scan_mode == bookmark)
     {
+        Frequencies = malloc(FREQ_MAX * sizeof(FREQ));
         bookmarksfd = Open(g_bookmarksfile);
         LoadFrequencies (bookmarksfd);
     }

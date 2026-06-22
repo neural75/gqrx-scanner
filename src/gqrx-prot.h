@@ -145,4 +145,18 @@ bool GetFFTValuesPartial(int sockfd, double start_hz, int n_bins, int fft_bw,
                          double *end_hz_out, double *bin_width,
                          int *total_bins, int *count_out);
 
+//
+// NCO-safe scan range helpers.
+//
+// Gqrx's setNewRemoteFreq allocates a bwh_eff = 0.36 × sample_rate as
+// the NCO-only safe zone.  Frequencies within this range of the current
+// centre verify without moving the hardware LO (panadapter stays put).
+// See remote_control.cpp lines 315 and 344.
+//
+#define GQRX_NCO_SAFE_RATIO       0.36
+#define GQRX_CENTER_CHANGE_HZ  100000
+
+bool CheckFFTSupport(void);
+void GetSafeRange(freq_t *p_min, freq_t *p_max, freq_t *p_center);
+
 #endif /* _GQRX_PROT_H_ */
