@@ -1255,10 +1255,11 @@ static int cmp_cluster_asc(const void *a, const void *b)
  * modulated carrier).  Updates *candidate on success. */
 static bool RefineFFTPeak(int sockfd, freq_t *candidate,
                            freq_t *out_center,
-                           int radius_hz, int fine_bw_hz)
+                           int radius_hz, int fine_bw_hz,
+                           freq_t freq_min, freq_t freq_max)
 {
-    const int refine_n_reads = 5;
-    const int refine_delay_us = 50000;
+    const int refine_n_reads = 3;
+    const int refine_delay_us = 10000;
     const float refine_edge_db = 12.0f;
     const int refine_rounding = 100;
 
@@ -1273,6 +1274,17 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
     float *accum = calloc((size_t)n_bins, sizeof(float));
     if (!accum)
     {
+        free(vals);
+        return false;
+    }
+
+    /* Fail-fast: if the candidate is outside the visible (or NCO-safe)
+     * range, the refinement request would land outside Gqrx's current
+     * spectrum window.  Skip without any I/O. */
+    if (*candidate + (freq_t)radius_hz < freq_min ||
+        *candidate - (freq_t)radius_hz > freq_max)
+    {
+        free(accum);
         free(vals);
         return false;
     }
@@ -1422,25 +1434,56 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
     return true;
 }
 
+/* Forward declaration — defined below, called by FineTunePeaks. */
+static bool VerifyCenterFrequency(int sockfd, int fft_bw,
+                                   freq_t fft_center,
+                                   freq_t previous_center);
+
 /* Fine-tune all candidate frequencies with sub-bin precision before
  * any SetFreq moves the receiver.  Every refinement reads the same
  * consistent spectrum at the sweep-start centre.
  * If out_center is non-NULL, the F: from the last refine read
- * is written to it (HW LO position, never the VFO frequency). */
+ * is written to it (HW LO position, never the VFO frequency).
+ *
+ * Aborts early if the centre drifts (user moved the HW LO).  Also
+ * re-reads the squelch periodically so user changes take effect
+ * mid-batch. */
 static void
 FineTunePeaks(
     int             sockfd,
     fft_cluster_t  *clusters,
     int             n_clusters,
     int             filter_bw,
-    freq_t         *out_center)
+    freq_t         *out_center,
+    freq_t          previous_center,
+    freq_t          freq_min,
+    freq_t          freq_max,
+    double         *squelch)
 {
     for (int c = 0; c < n_clusters; c++)
     {
+        /* Re-read squelch every 50 candidates so user changes on the
+         * Gqrx GUI take effect without waiting for the next sweep. */
+        if (c > 0 && c % 50 == 0)
+            GetSquelchLevel(sockfd, squelch);
+
+        /* Skip clusters whose peak is below the current squelch —
+         * no point spending I/O on below-threshold noise bumps. */
+        if (clusters[c].peak_level < *squelch)
+            continue;
+
         freq_t coarse = clusters[c].peak_freq;
         RefineFFTPeak(sockfd, &clusters[c].peak_freq,
                        out_center,
-                       filter_bw, filter_bw / 100);
+                       filter_bw, filter_bw / 100,
+                       freq_min, freq_max);
+
+        /* Abort remaining refinements if the centre drifted — the
+         * candidate list is stale for the new centre. */
+        if (!VerifyCenterFrequency(sockfd, filter_bw,
+                                    *out_center, previous_center))
+            break;
+
         if (opt_verbose && coarse != clusters[c].peak_freq)
         {
             printf("[FFT] refine %s -> %s\n",
@@ -2230,9 +2273,20 @@ static bool ProcessCandidates(
     int             filter_bw)
 {
     bool found_any = false;
+    int consecutive_rejects = 0;
 
     for (int c = 0; c < n_clusters; c++)
     {
+        /* Stop once the tail is all rejects — remaining candidates
+         * are even weaker (sorted descending) and will also fail. */
+        if (consecutive_rejects >= 5)
+        {
+            if (opt_verbose)
+                printf("[FFT] %d consecutive rejects, stopping\n",
+                       consecutive_rejects);
+            break;
+        }
+
         freq_t  candidate  = clusters[c].peak_freq;
         double  peak_level = clusters[c].peak_level;
 
@@ -2242,6 +2296,15 @@ static bool ProcessCandidates(
 
         if (candidate < freq_min || candidate > freq_max)
             continue;
+
+        /* Skip if the FFT peak is already below the current squelch.
+         * The squelch may have been raised since the sweep — no point
+         * tuning to a signal that won't pass the audio-path check. */
+        if (peak_level < *squelch)
+        {
+            consecutive_rejects++;
+            continue;
+        }
 
         /* Verify the FFT centre has not drifted since the sweep
          * (user retuned the HW LO).  If it has, the candidate list
@@ -2283,8 +2346,12 @@ static bool ProcessCandidates(
         {
             // FFT saw something during the sweep but the audio path
             // disagrees — false positive, skip.
+            consecutive_rejects++;
             continue;
         }
+
+        /* Successful verify — reset the reject streak. */
+        consecutive_rejects = 0;
 
         if (opt_record)
             StartRecording(sockfd);
@@ -2533,7 +2600,8 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
         // Fine-tune all candidate frequencies with sub-bin precision.
         //
         FineTunePeaks(g_sockfd, clusters, n_clusters, filter_bw,
-                      &fft_center);
+                      &fft_center, previous_center,
+                      freq_min, freq_max, &squelch);
 
         /* Verify the FFT centre hasn't drifted during refinement.
          * Uses the updated centre from the last refine FFT read
