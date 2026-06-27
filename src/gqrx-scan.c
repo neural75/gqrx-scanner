@@ -610,9 +610,11 @@ void nonblock(int state)
 // GetTime
 // Get the time stamp dd-mm-yy hh:mm:ss
 //
-time_t GetTime(char *timestamp)
+struct timeval GetTime(char *timestamp)
 {
-    time_t etime = time(NULL);
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    time_t etime = tv.tv_sec;
     struct tm *ltime = localtime (&etime);
     switch (opt_date)
     {
@@ -625,18 +627,18 @@ time_t GetTime(char *timestamp)
         	        ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
 		break;
     }
-    return etime;
+    return tv;
 }
 
 // Calculate difference in time in [dd days][hh:][mm:][ss secs]
-time_t DiffTime(char *timestamp, time_t start_time)
+void DiffTime(char *timestamp, struct timeval *start)
 {
-    double seconds;
-    time_t etime = time (NULL);
-    seconds = difftime(etime , start_time);
-
-    // casting to time_t, someone with better idea may change this to be more consistent
-    time_t elapsed = (time_t)seconds;
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    long diff_us = (now.tv_sec - start->tv_sec) * 1000000L
+                 + (now.tv_usec - start->tv_usec);
+    if (diff_us < 0) diff_us = 0;
+    time_t elapsed = diff_us / 1000000;
     struct tm *ltime = localtime(&elapsed);
     timestamp[0] = '\0';
 
@@ -660,10 +662,9 @@ time_t DiffTime(char *timestamp, time_t start_time)
         sprintf(min, "%2.2d:", ltime->tm_min);
         strcat(timestamp, min);
     }
-        char sec[16];
-        sprintf(sec, "%2.2d sec", ltime->tm_sec);
+        char sec[32];
+        sprintf(sec, "%2.2ld sec", (long)ltime->tm_sec);
         strcat(timestamp, sec);
-    return elapsed;
 }
 
 //
@@ -731,22 +732,93 @@ void CheckUserInput (void)
 bool Reconnect(void);
 
 //
+// listen_timer — wall-clock timer for WaitUserInputOrDelay.
+// All timing is in µs since start, precise regardless of TCP/VAD delays.
+//
+typedef struct {
+    struct timeval start;
+    long           now;          // µs since start (set by tick)
+    long           silence_at;   // µs when silence began (0 = not silent)
+    long           drop_at;      // µs when drop began (0 = not dropped)
+    bool           voice_heard;
+} listen_timer_t;
+
+static inline void listen_timer_init(listen_timer_t *t)
+{
+    gettimeofday(&t->start, NULL);
+    t->now = t->silence_at = t->drop_at = 0;
+    t->voice_heard = false;
+}
+
+static inline void listen_timer_tick(listen_timer_t *t)
+{
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    t->now = (now.tv_sec - t->start.tv_sec) * 1000000L
+           + (now.tv_usec - t->start.tv_usec);
+}
+
+static inline void listen_timer_on_voice(listen_timer_t *t)
+{
+    t->voice_heard = true;
+    t->silence_at = 0;
+    t->drop_at = 0;
+}
+
+static inline void listen_timer_on_silence(listen_timer_t *t)
+{
+    if (!t->silence_at)
+        t->silence_at = t->now;
+}
+
+static inline void listen_timer_on_drop(listen_timer_t *t)
+{
+    if (!t->drop_at)
+        t->drop_at = t->now;
+}
+
+static inline void listen_timer_on_signal(listen_timer_t *t)
+{
+    t->drop_at = 0;
+}
+
+// Returns true when probe (no voice heard yet) or hangup (threshold ms of
+// consecutive silence after voice) expires.  silence_at == 0 means "not
+// currently in silence" — exit can never fire in that state.
+static inline bool listen_timer_should_exit(listen_timer_t *t,
+    long probe_us, long hangup_us)
+{
+    if (t->voice_heard)
+        return t->silence_at && hangup_us > 0
+            && t->now - t->silence_at >= hangup_us;
+    return probe_us > 0 && t->now >= probe_us;
+}
+
+// Returns true when below-squelch duration exceeds delay.
+static inline bool listen_timer_drop_expired(listen_timer_t *t, long delay_us)
+{
+    return t->drop_at && (t->now - t->drop_at > delay_us);
+}
+
+
+//
 // WaitUserInputOrDelay
 // Waits for user input or a delay after the carrier is gone
 // Returns if the user has pressed <space> or <enter> to skip frequency
 //
-bool WaitUserInputOrDelay (long delay, freq_t *current_freq)
+bool WaitUserInputOrDelay(long delay, freq_t *current_freq)
 {
     double    squelch;
-    double  level;
-    long    sleep_time = 0, listen_time = 0, consecutive_silent = 0, sleep = 100000; // 100 ms
-    long    vox_sample_time = 10000;  // 10 ms VOX audio capture window (µs)
-    int     exit = 0;
-    char    c;
-    bool    skip = false;
-    bool    pause = false;
-    bool    voice_was_detected = false;
-    int     socket_failures = 0;
+    double    level;
+    long      vox_sample_time = 10000;  // 10 ms VOX audio capture window (µs)
+    int       exit = 0;
+    char      c;
+    bool      skip = false;
+    bool      pause = false;
+    int       socket_failures = 0;
+    listen_timer_t tmr;
+
+    listen_timer_init(&tmr);
 
 #ifndef OSX
     __fpurge(stdin);
@@ -754,13 +826,6 @@ bool WaitUserInputOrDelay (long delay, freq_t *current_freq)
     fpurge(stdin);
 #endif
     nonblock(NB_ENABLE);
-
-#ifndef OSX
-    // Flush stale audio left in the pipe from the previous frequency,
-    // so VoxAudioHasSignal() only measures this frequency's audio.
-    if (opt_vox)
-        VoxAudioFlush();
-#endif
 
     do
     {
@@ -784,150 +849,78 @@ bool WaitUserInputOrDelay (long delay, freq_t *current_freq)
                 skip = true;
                 break;
             }
-            usleep(sleep);
+            usleep(100000);
             continue;
         }
         socket_failures = 0;
+
         exit = kbhit();
-        if (exit !=  0)
+        if (exit != 0)
         {
             c = fgetc(stdin);
             switch (c)
             {
                 case ' ':
-                case '\n':
-                {
-                    exit = 1; // exit
-                    skip = true;
-                    break;
-                }
-                case 'b':
-                {
-                    // Ban a frequency
-                    BanFreq(*current_freq);
-                    exit = 1;
-                    skip = true;
-                    break;
-                }
-                case 'c':
-                {
-                    // Clear all bans
-                    ClearAllBans();
-                    exit = 0;
-                    break;
-                }
-                case 'p':
-                {
-                    // pause until another 'p'
-                    pause ^= true; // switch pause mode
-                    exit = 0;
-                    break;
-                }
-                default:
-                    exit = 0;
-
+                case '\n':  { exit = 1; skip = true; break; }
+                case 'b':   { BanFreq(*current_freq); exit = 1; skip = true; break; }
+                case 'c':   { ClearAllBans(); exit = 0; break; }
+                case 'p':   { pause ^= true; exit = 0; break; }
+                default:      exit = 0;
             }
-            if (exit == 1)
-                break;
+            if (exit == 1) break;
         }
 
-        if (pause)
-        {
-            usleep (sleep);
-            continue;
-        }
+        if (pause) { usleep(100000); continue; }
 
-        listen_time += sleep;
-
+        // ------ VOX detection & timing ------
 #ifndef OSX
-        // Voice-activity detection — when --vox is active and the carrier
-        // is present, poll for fresh audio with a vox_sample_time window.
-        // If voice is detected we reset both the listen_time and the
-        // consecutive-silence counter, so the frequency stays active.
-        // On silence we only increment the consecutive-silence counter.
         if (opt_vox && level >= squelch)
         {
             if (VoxAudioHasSignal(vox_sample_time))
-            {
-                voice_was_detected = true;
-                listen_time = 0;
-                consecutive_silent = 0;
-                sleep_time = 0;
-            }
+                listen_timer_on_voice(&tmr);
             else
             {
-                consecutive_silent++;
-                if (!VoxAudioIsAlive())
+                listen_timer_on_silence(&tmr);
+                if (!VoxAudioIsAlive() && !VoxAudioRestart())
                 {
-                    // Try to respawn pw-cat.  If the pipe cannot be
-                    // opened (pw-cat missing, PipeWire down) then
-                    // disable VOX permanently for this scan.
-                    if (!VoxAudioRestart())
-                    {
-                        fprintf(stderr, "[ WARNING ] Audio capture pipe closed. "
-                                "Disabling VOX.\n");
-                        opt_vox = false;
-                    }
+                    fprintf(stderr, "[ WARNING ] Audio capture pipe closed. "
+                            "Disabling VOX.\n");
+                    opt_vox = false;
                 }
             }
-        }
-#endif
 
-        // Two-phase VOX timing:
-        //   Phase 1 (probe)  — no voice heard yet → exit after probe_time
-        //   Phase 2 (active) — voice seen → exit after hangup_time of silence
-#ifndef OSX
-        if (opt_vox && level >= squelch)
-        {
-            long threshold = voice_was_detected ? opt_max_listen : opt_max_probe;
-            long limit = voice_was_detected ? consecutive_silent * sleep : listen_time;
-            if (threshold > 0 && limit >= threshold)
-            {
-                exit = 1;
-                skip = true;
-            }
+            // Tick after VAD so tmr.now includes VAD processing time.
+            listen_timer_tick(&tmr);
+
+            if (listen_timer_should_exit(&tmr, opt_max_probe, opt_max_listen))
+            { exit = 1; skip = true; }
         }
         else
 #endif
-          if (opt_max_listen != 0)
-          {
-              // Non-VOX path: original listen-time cap
-              if (opt_max_listen <= listen_time)
-              {
-                  exit = 1;
-                  skip = true;
-              }
-          }
-
-        // exit = 0
-        if (level < squelch )
         {
+            listen_timer_tick(&tmr);
+            if (opt_max_listen != 0 && tmr.now >= opt_max_listen)
+            { exit = 1; skip = true; }
+        }
 
-
-            // Signal drop below the threshold, start counting sleep time
-            sleep_time += sleep;
-            if (sleep_time > delay)
-            {
-
-                exit = 1;
-                skip = false;
-            }
+        // ------ Signal drop ------
+        if (level < squelch)
+        {
+            listen_timer_on_drop(&tmr);
+            if (listen_timer_drop_expired(&tmr, delay))
+            { exit = 1; skip = false; }
         }
         else
-        {
-            sleep_time = 0; //
-        }
-        // someone is tx'ing
-        usleep(sleep);
-    } while ( !exit ) ;
+            listen_timer_on_signal(&tmr);
+
+        usleep(100000);
+    } while (!exit);
 
     nonblock(NB_DISABLE);
 
-
     // restart scanning
-    *current_freq+=g_ban_tollerance;
-    // round up to next near tenth of khz  145892125 -> 145900000
-    *current_freq = ceil( *current_freq / (double)opt_scan_bw ) * opt_scan_bw;
+    *current_freq += g_ban_tollerance;
+    *current_freq = ceil(*current_freq / (double)opt_scan_bw) * opt_scan_bw;
 
 #ifndef OSX
     __fpurge(stdin);
@@ -1116,6 +1109,7 @@ bool ScanBookmarkedFrequenciesInRange(freq_t freq_min, freq_t freq_max)
                     if (g_socket_dead)
                         Reconnect();
                     SetFreq(g_sockfd, current_freq);
+                    if (opt_vox) VoxAudioReset();
                     SetModulationAndBandwidth (g_sockfd, Frequencies[i].modulation, Frequencies[i].bandwidth);
                     GetSquelchLevel(g_sockfd, &squelch);
                     usleep((skip) ? slow_scan_cycle : opt_speed);
@@ -1127,13 +1121,13 @@ bool ScanBookmarkedFrequenciesInRange(freq_t freq_min, freq_t freq_max)
                         {
                             StartRecording(g_sockfd);
                         }
-                        time_t hit_time = GetTime(timestamp);
+                        struct timeval hit_time = GetTime(timestamp);
                         printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
                                 timestamp, print_freq(current_freq),
                                 Frequencies[i].descr, level, squelch);
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(opt_delay, &current_freq);
-                        time_t elapsed = DiffTime(timestamp, hit_time);
+                        DiffTime(timestamp, &hit_time);
                         if (opt_record)
                         {
                             StopRecording(g_sockfd);
@@ -2322,6 +2316,7 @@ static bool ProcessCandidates(
         }
 
         SetFreq(sockfd, candidate);
+        if (opt_vox) VoxAudioReset();
         usleep(g_settle_time_us);
 
         /* Re-read the squelch level for each candidate so the user can
@@ -2359,7 +2354,7 @@ static bool ProcessCandidates(
         SaveFreq(candidate);
 
         char timestamp[BUFSIZE] = {0};
-        time_t hit_time = GetTime(timestamp);
+        struct timeval hit_time = GetTime(timestamp);
         printf("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
                timestamp, print_freq(candidate),
                peak_level, *squelch);
@@ -2368,7 +2363,7 @@ static bool ProcessCandidates(
         freq_t dummy_freq = candidate;
         WaitUserInputOrDelay(opt_delay, &dummy_freq);
 
-        time_t elapsed = DiffTime(timestamp, hit_time);
+        DiffTime(timestamp, &hit_time);
         if (opt_record)
             StopRecording(sockfd);
         printf(" [elapsed time %s]\n", timestamp);
@@ -2465,16 +2460,14 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
     }
 
     freq_t previous_center = 0;
-    bool found_any = false;
 
     while (true)
     {
         /* Save this sweep's centre as the baseline for the next cycle. */
         previous_center = fft_center;
 
-        // Let the FFT update cycle flush stale data before the next sweep.
-        usleep(found_any ? g_settle_time_us : GQRX_FFT_UPDATE_US);
-        found_any = false;
+        // Minimal delay between FFT sweeps — the spectrum is one-shot.
+        usleep(GQRX_FFT_UPDATE_US);
 #ifdef TESTING_BUILD
         if (g_testing_max_full_sweeps >= 0 &&
             g_testing_sweep_full_count >= g_testing_max_full_sweeps)
@@ -2618,7 +2611,7 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
         //
         // Final pass: verify and save each candidate.
         //
-        found_any = ProcessCandidates(
+        ProcessCandidates(
             g_sockfd, clusters, n_clusters, &squelch,
             freq_min, freq_max, previous_center, filter_bw);
     }
@@ -3151,6 +3144,7 @@ bool ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interv
                 Reconnect();
             IsBannedFreq(&current_freq); // test and change current_frequency to next available slot;
             SetFreq(g_sockfd, current_freq);
+            if (opt_vox) VoxAudioReset();
             if (saved_cycle)
                 usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
             else
@@ -3249,14 +3243,14 @@ bool ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interv
                         StartRecording(g_sockfd);
                     }
 
-                    time_t hit_time = GetTime(timestamp);
+                    struct timeval hit_time = GetTime(timestamp);
                     printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
                             timestamp, print_freq(current_freq),
                             level, squelch );
                     fflush(stdout);
                     // Wait user input or delay time after signal lost
                     skip = WaitUserInputOrDelay(opt_delay, &current_freq);
-                    time_t elapsed = DiffTime(timestamp, hit_time);
+                    DiffTime(timestamp, &hit_time);
                     if (opt_record)
                     {
                         StopRecording(g_sockfd);

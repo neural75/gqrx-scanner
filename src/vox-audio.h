@@ -67,11 +67,20 @@ void VoxAudioShutdown(void);
 //
 // VoxAudioFlush
 //   Read and discard any data already buffered in the capture pipe.
-//   Call this once when entering a new frequency so that subsequent
-//   VoxAudioHasSignal() calls measure only this frequency's audio.
 //   Returns true if the pipe is still alive, false on EOF/error.
+//   Internal — invoked by VoxAudioReset(); not typically called directly.
 //
 bool VoxAudioFlush(void);
+
+//
+// VoxAudioReset
+//   Prepare the audio capture and VAD state for detection on a new
+//   frequency.  Flushes stale audio from the pipe and resets the VAD
+//   state machine (hangover, pitch-sustain counters) so the previous
+//   frequency does not contaminate the next measurement.
+//   Call once when entering a new frequency, before the listen loop.
+//
+void VoxAudioReset(void);
 
 //
 // VoxAudioStats
