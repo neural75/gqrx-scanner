@@ -153,7 +153,7 @@ it for voice without muting your speakers:
 
   1. Creates a Virtual Null Sink called "Gqrx Scanner Intercept"
   2. Redirects your demodulator (DSD, GQRX, etc.) to this Virtual Null Sink
-  3. Sets up a loopback from the Virtual Null Sink back to your speakers
+  3. Sets up a loopback from the Virtual Null Sink back to your speakers (gqrx-scanner-monitor)
 
 Audio flow: app → Gqrx Scanner Intercept → (speakers + scanner capture)
 
