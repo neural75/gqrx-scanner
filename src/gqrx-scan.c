@@ -1084,7 +1084,9 @@ bool ScanBookmarkedFrequenciesInRange(freq_t freq_min, freq_t freq_max)
                     if (g_socket_dead)
                         Reconnect();
                     SetFreq(g_sockfd, current_freq);
+#ifndef OSX
                     if (opt_vox) VoxAudioReset();
+#endif
                     SetModulationAndBandwidth (g_sockfd, Frequencies[i].modulation, Frequencies[i].bandwidth);
                     GetSquelchLevel(g_sockfd, &squelch);
                     usleep((skip) ? slow_scan_cycle : opt_speed);
@@ -1652,7 +1654,9 @@ bool ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interv
                 Reconnect();
             IsBannedFreq(&current_freq); // test and change current_frequency to next available slot;
             SetFreq(g_sockfd, current_freq);
+#ifndef OSX
             if (opt_vox) VoxAudioReset();
+#endif
             if (saved_cycle)
                 usleep((skip)?sleep_cycle_active:sleep_cyle_saved);
             else
