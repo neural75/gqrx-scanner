@@ -15,7 +15,7 @@ A frequency scanner for [Gqrx Software Defined Radio](http://gqrx.dk/) receiver
 
 ## Description
 
-gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks (--mode bookmark) to look for the already stored frequencies or, in a free sweep scan mode (--mode sweep), to explore the band within a specified frequency range (--min, --max options).
+gqrx-scanner is a frequency scanner written in C that uses [gqrx remote protocol](http://gqrx.dk/doc/remote-control) to perform a fast scan of the band. It can be used in conjunction with the gqrx bookmarks (--mode bookmark) to look for the already stored frequencies, in free sweep scan mode (--mode sweep) to explore the band within a specified frequency range (--min, --max options), or in FFT mode (--mode fft) which uses Gqrx's FFT extension to read the full visible spectrum in a single request for substantially faster scanning.
 
 The sweep scan uses an adaptive algorithm to remember the active frequencies encountered during the sweep, that prioritizes active stations without stopping to look for new ones.
 
@@ -53,7 +53,7 @@ I have found better result with high fft size (64536) and 17 fps refresh rate, b
 ```
 Usage:
 gqrx-scanner
-		[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark>]
+		[-h|--host <host>] [-p|--port <port>] [-m|--mode <sweep|bookmark|fft>]
 		[-f <central frequency>] [-b|--min <from freq>] [-e|--max <to freq>]
 		[-d|--delay <lingering time in milliseconds>]
 		[-l|--max-listen <[probe_time:]hangup_time>]
@@ -65,7 +65,8 @@ gqrx-scanner
 -h, --host <host>            Name of the host to connect. Default: localhost
 -p, --port <port>            The number of the port to connect. Default: 7356
 -m, --mode <mode>            Scan mode to be used. Default: sweep
-                               Possible values for <mode>: sweep, bookmark
+                               Possible values for <mode>: sweep, bookmark, fft
+                               fft uses the Gqrx FFT extension for faster scanning
 -f, --freq <freq>            Frequency to scan with a range of +- 1MHz.
                                Default: the current frequency tuned in Gqrx Incompatible with -b, -e
 -b, --min <freq>             Frequency range begins with this <freq> in Hz. Incompatible with -f
