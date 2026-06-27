@@ -2318,7 +2318,9 @@ static bool ProcessCandidates(
         }
 
         SetFreq(sockfd, candidate);
+#ifndef OSX
         if (opt_vox) VoxAudioReset();
+#endif
         usleep(g_settle_time_us);
 
         /* Re-read the squelch level for each candidate so the user can
