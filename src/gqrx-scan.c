@@ -1221,6 +1221,7 @@ static void print_top_peaks(double start_freq, double bin_bw,
 typedef struct {
     freq_t  peak_freq;  /* center frequency of the strongest bin [Hz] */
     double  peak_level; /* maximum dBFS value in the cluster */
+    bool    visited;    /* already verified and locked in this batch */
 } fft_cluster_t;
 
 /* Comparator for sorting clusters by descending peak level. */
@@ -1658,6 +1659,7 @@ static int CleanDetectGap(
 
         clusters[write_idx + added].peak_freq  = cf;
         clusters[write_idx + added].peak_level = mv_db;
+        clusters[write_idx + added].visited    = false;
         added++;
     }
 
@@ -2248,9 +2250,177 @@ static void CollectCoarsePeaks(
 
             clusters[*n_clusters].peak_freq   = candidate;
             clusters[*n_clusters].peak_level  = pk;
+            clusters[*n_clusters].visited     = false;
             (*n_clusters)++;
         }
     }
+}
+
+/* Sort candidates by peak level descending so the strongest signals
+ * are verified first.  Prints the candidate list if opt_verbose. */
+static void SortCandidatesByLevel(
+    fft_cluster_t *clusters,
+    int n_clusters,
+    double squelch)
+{
+    qsort(clusters, (size_t)n_clusters, sizeof(fft_cluster_t), cmp_cluster_desc);
+
+    if (opt_verbose && n_clusters > 0)
+    {
+        printf("[FFT] %d candidates (bins >= %.1f dBFS):\n",
+               n_clusters, squelch);
+        for (int c = 0; c < n_clusters; c++)
+        {
+            printf("  #%d  %s  peak=%.1f dBFS\n",
+                   c + 1,
+                   print_freq(clusters[c].peak_freq),
+                   clusters[c].peak_level);
+        }
+        fflush(stdout);
+    }
+}
+
+/* RefreshCandidates — between-candidate refresh of the candidate list.
+ *
+ * Called from ProcessCandidates after each candidate completes its lock
+ * period.  Reads a fresh FFT spectrum, runs coarse peak detection, and
+ * diffs against the unvisited candidates in the list.  Existing candidates
+ * whose frequency no longer has an above-squelch peak are removed.  New
+ * strong peaks not matching any existing candidate are refined and added.
+ * The list is re-sorted by level descending.
+ *
+ * Parameters:
+ *   sockfd     — connected Gqrx socket
+ *   clusters   — [in/out] candidate array (mutated in place)
+ *   n_clusters — [in/out] number of candidates
+ *   squelch    — current squelch level (dBFS)
+ *   freq_min   — low end of the scan range
+ *   freq_max   — high end of the scan range
+ *   filter_bw  — channel filter bandwidth (Hz); also used as match tolerance
+ */
+static void RefreshCandidates(
+    int             sockfd,
+    fft_cluster_t  *clusters,
+    int            *n_clusters,
+    double          squelch,
+    freq_t          freq_min,
+    freq_t          freq_max,
+    int             filter_bw)
+{
+    freq_t center        = 0;
+    double fft_start     = 0;
+    double fft_end       = 0;
+    double fft_bin       = 0;
+    int    total         = 0;
+    int    count         = 0;
+
+    /* Read fresh FFT geometry and spectrum. */
+    if (!GetFFTParameters(sockfd, filter_bw,
+                          &center, &fft_start, &fft_end,
+                          &fft_bin, &total, &count))
+        return;
+
+    if (total <= 0 || count <= 0)
+        return;
+
+    float *values = malloc((size_t)total * sizeof(float));
+    if (!values)
+        return;
+
+    if (!GetFFTValues(sockfd, filter_bw,
+                      values, total,
+                      &center, &fft_start, &fft_end,
+                      &fft_bin, &total, &count))
+    {
+        free(values);
+        return;
+    }
+
+    /* Detect current above-squelch peaks. */
+    fft_cluster_t current_peaks[FFT_CLUSTER_MAX];
+    int n_current = 0;
+
+    CollectCoarsePeaks(values, count, squelch,
+                       freq_min, freq_max,
+                       fft_start, fft_bin,
+                       current_peaks, FFT_CLUSTER_MAX, &n_current);
+
+    free(values);
+
+    /* Match tolerance: signals within filter_bw Hz are the same station. */
+    freq_t tolerance = (freq_t)filter_bw;
+
+    /* Compact: keep visited clusters + unvisited clusters that still
+     * have a peak in the fresh spectrum. */
+    int write = 0;
+    for (int i = 0; i < *n_clusters; i++)
+    {
+        if (clusters[i].visited)
+        {
+            clusters[write++] = clusters[i];
+            continue;
+        }
+
+        /* Check if this candidate's frequency still has a peak. */
+        bool found = false;
+        for (int j = 0; j < n_current; j++)
+        {
+            freq_t freq_cur = clusters[i].peak_freq;
+            freq_t freq_fft = current_peaks[j].peak_freq;
+            freq_t delta = (freq_cur > freq_fft)
+                         ? freq_cur - freq_fft
+                         : freq_fft - freq_cur;
+            if (delta <= tolerance)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (found)
+            clusters[write++] = clusters[i];
+        /* else: signal no longer present — drop it. */
+    }
+    *n_clusters = write;
+
+    /* Add new peaks not matching any existing cluster (visited or not). */
+    for (int j = 0; j < n_current && *n_clusters < FFT_CLUSTER_MAX; j++)
+    {
+        bool matched = false;
+        for (int i = 0; i < *n_clusters; i++)
+        {
+            freq_t freq_peak = current_peaks[j].peak_freq;
+            freq_t freq_cls  = clusters[i].peak_freq;
+            freq_t delta = (freq_peak > freq_cls)
+                         ? freq_peak - freq_cls
+                         : freq_cls - freq_peak;
+            if (delta <= tolerance)
+            {
+                matched = true;
+                break;
+            }
+        }
+
+        if (!matched)
+        {
+            /* New candidate — refine to sub-bin precision before adding. */
+            freq_t refined = current_peaks[j].peak_freq;
+            freq_t out_center = 0;
+
+            if (RefineFFTPeak(sockfd, &refined, &out_center,
+                              filter_bw, filter_bw / 100,
+                              freq_min, freq_max))
+            {
+                clusters[*n_clusters].peak_freq  = refined;
+                clusters[*n_clusters].peak_level = current_peaks[j].peak_level;
+                clusters[*n_clusters].visited    = false;
+                (*n_clusters)++;
+            }
+        }
+    }
+
+    /* Re-sort the updated list by descending level. */
+    SortCandidatesByLevel(clusters, *n_clusters, squelch);
 }
 
 /* Tune to each candidate in descending peak-level order, verifying
@@ -2261,7 +2431,7 @@ static void CollectCoarsePeaks(
 static bool ProcessCandidates(
     int             sockfd,
     fft_cluster_t  *clusters,
-    int             n_clusters,
+    int            *n_clusters,
     double         *squelch,
     freq_t          freq_min,
     freq_t          freq_max,
@@ -2270,8 +2440,9 @@ static bool ProcessCandidates(
 {
     bool found_any = false;
     int consecutive_rejects = 0;
+    int c = 0;
 
-    for (int c = 0; c < n_clusters; c++)
+    while (c < *n_clusters)
     {
         /* Stop once the tail is all rejects — remaining candidates
          * are even weaker (sorted descending) and will also fail. */
@@ -2283,6 +2454,14 @@ static bool ProcessCandidates(
             break;
         }
 
+        /* Skip already-visited candidates (consumed by an earlier
+         * iteration or rejected/out-of-range). */
+        if (clusters[c].visited)
+        {
+            c++;
+            continue;
+        }
+
         freq_t  candidate  = clusters[c].peak_freq;
         double  peak_level = clusters[c].peak_level;
 
@@ -2291,14 +2470,20 @@ static bool ProcessCandidates(
             break;
 
         if (candidate < freq_min || candidate > freq_max)
+        {
+            clusters[c].visited = true;
+            c++;
             continue;
+        }
 
         /* Skip if the FFT peak is already below the current squelch.
          * The squelch may have been raised since the sweep — no point
          * tuning to a signal that won't pass the audio-path check. */
         if (peak_level < *squelch)
         {
+            clusters[c].visited = true;
             consecutive_rejects++;
+            c++;
             continue;
         }
 
@@ -2345,7 +2530,9 @@ static bool ProcessCandidates(
         {
             // FFT saw something during the sweep but the audio path
             // disagrees — false positive, skip.
+            clusters[c].visited = true;
             consecutive_rejects++;
+            c++;
             continue;
         }
 
@@ -2373,38 +2560,17 @@ static bool ProcessCandidates(
         printf(" [elapsed time %s]\n", timestamp);
         fflush(stdout);
 
-        /* Process remaining candidates from this sweep.  Each
-         * iteration refines and verifies independently — the
-         * coarse candidate list is from the original sweep but
-         * refinement and audio verify are fresh per candidate.
-         * Press 'q' (checked in the outer while loop) to quit. */
+        /* Between-candidate refresh: re-read the spectrum and update
+         * the candidate list.  Mark this candidate as visited so the
+         * refresh preserves it (it was consumed).  Then restart from
+         * the strongest unvisited candidate. */
+        clusters[c].visited = true;
+        RefreshCandidates(sockfd, clusters, n_clusters, *squelch,
+                          freq_min, freq_max, filter_bw);
+        c = 0;
     }
 
     return found_any;
-}
-
-/* Sort candidates by peak level descending so the strongest signals
- * are verified first.  Prints the candidate list if opt_verbose. */
-static void SortCandidatesByLevel(
-    fft_cluster_t *clusters,
-    int n_clusters,
-    double squelch)
-{
-    qsort(clusters, (size_t)n_clusters, sizeof(fft_cluster_t), cmp_cluster_desc);
-
-    if (opt_verbose && n_clusters > 0)
-    {
-        printf("[FFT] %d candidates (bins >= %.1f dBFS):\n",
-               n_clusters, squelch);
-        for (int c = 0; c < n_clusters; c++)
-        {
-            printf("  #%d  %s  peak=%.1f dBFS\n",
-                   c + 1,
-                   print_freq(clusters[c].peak_freq),
-                   clusters[c].peak_level);
-        }
-        fflush(stdout);
-    }
 }
 
 //
@@ -2616,7 +2782,7 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
         // Final pass: verify and save each candidate.
         //
         ProcessCandidates(
-            g_sockfd, clusters, n_clusters, &squelch,
+            g_sockfd, clusters, &n_clusters, &squelch,
             freq_min, freq_max, previous_center, filter_bw);
     }
 
