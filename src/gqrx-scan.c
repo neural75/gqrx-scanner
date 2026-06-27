@@ -1805,12 +1805,24 @@ static bool ReadSpectrum(
             }
 
             int copy = nv;
+            int src_offset = 0;
+
+            /* If rs rounded to a bin before the start of our buffer,
+             * shift the source offset and reduce the copy count so we
+             * don't underrun read_buf. */
+            if (bin < 0)
+            {
+                src_offset = -bin;
+                copy      -= src_offset;
+                bin        = 0;
+            }
+
             if (bin + copy > n_bins)
                 copy = n_bins - bin;
             if (copy > 0)
             {
                 for (int j = 0; j < copy; j++)
-                    read_buf[bin + j] = tmp[j];
+                    read_buf[bin + j] = tmp[src_offset + j];
                 if (bin + copy > last_idx)
                     last_idx = bin + copy;
             }
