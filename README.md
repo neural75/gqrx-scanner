@@ -134,16 +134,18 @@ By default, `pw-cat --record` captures from the **default audio monitor**
 ```
 
 If you run other audio sources (music, notifications, etc.) that could
-falsely trigger VOX, the `gqrx-scan-setup-audio.sh` script isolates just
-your demodulator's audio.  It creates a virtual null sink that
-intercepts the app's audio, duplicating it so the scanner can analyze
-it for voice without muting the speakers:
+falsely trigger VOX — or, more importantly, if you are decoding digital
+audio with an external tool such as a digital decoder (dsd, dsd-fme, etc.)
+— the `gqrx-scan-setup-audio.sh` script selectively routes just that
+application's audio through a Virtual Null Sink ("Gqrx Scanner Intercept")
+instead of capturing everything from the speakers.  The scanner analyzes
+it for voice without muting your speakers:
 
-  1. Creates a virtual "null sink" (gqrx-scanner-intercept)
-  2. Redirects your demodulator (DSD, GQRX, etc.) to this null sink
-  3. Sets up a loopback from the null sink back to your speakers
+  1. Creates a Virtual Null Sink called "Gqrx Scanner Intercept"
+  2. Redirects your demodulator (DSD, GQRX, etc.) to this Virtual Null Sink
+  3. Sets up a loopback from the Virtual Null Sink back to your speakers
 
-Audio flow: app → null sink → (speakers + scanner capture)
+Audio flow: app → Gqrx Scanner Intercept → (speakers + scanner capture)
 
 ### Using the interceptor script
 
@@ -174,6 +176,18 @@ Audio flow: app → null sink → (speakers + scanner capture)
    ./gqrx-scan-setup-audio.sh detach
    ./gqrx-scan-setup-audio.sh cleanup
    ```
+
+### Volume controls after interception
+
+- **Your source app** (DSD-FME, etc.) still has its own volume slider —
+  controls the level going into the interception.
+- **`gqrx-scanner-monitor`** — a new playback stream that appears after
+  attaching.  Controls how loud the intercepted audio is through your
+  speakers, independently from the source app's slider.
+
+The Virtual Null Sink's monitor is a tap point that duplicates all audio
+flowing through the sink.  The scanner reads from this tap for voice
+detection, while the monitor plays it to your speakers.
 
 ## Examples
 Performs a sweep scan with a range of +-1Mhz from the demodulator frequency in Gqrx:
