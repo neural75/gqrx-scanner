@@ -122,6 +122,7 @@ case "${1:-}" in
         pw-loopback \
             -n "$LOOPBACK_NAME" \
             -i "$cap_props" \
+            -o "media.class=Stream/Output/Audio" \
             -P "$orig_sink_name" &>/dev/null &
         loop_pid=$!
         disown
