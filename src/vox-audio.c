@@ -354,6 +354,19 @@ bool VoxAudioFlush(void)
 }
 
 //
+// VoxAudioReset
+//   Prepare for detection on a new frequency.  Flushes stale audio
+//   from the pipe and re-initialises the VAD state so hangover and
+//   pitch-sustain counters do not carry over between frequencies.
+//   Call once when entering vox detection for a new carrier.
+//
+void VoxAudioReset(void)
+{
+    VoxAudioFlush();
+    VoxVADInit(&g_vad_state);
+}
+
+//
 // VoxAudioComputeStats(buf, nsamples, stats)
 //   Two-pass statistics over a raw s16 buffer.  See vox-audio.h for
 //   the struct and field semantics.
