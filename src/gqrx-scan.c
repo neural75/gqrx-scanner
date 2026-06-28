@@ -1259,6 +1259,7 @@ static int cmp_cluster_asc(const void *a, const void *b)
  * modulated carrier).  Updates *candidate on success. */
 static bool RefineFFTPeak(int sockfd, freq_t *candidate,
                            freq_t *out_center,
+                           double *out_level,
                            int radius_hz, int fine_bw_hz,
                            freq_t freq_min, freq_t freq_max)
 {
@@ -1432,6 +1433,8 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
 
     if (out_center)
         *out_center = rc;
+    if (out_level)
+        *out_level = (double)best_val;
 
     free(accum);
     free(vals);
@@ -1478,7 +1481,7 @@ FineTunePeaks(
 
         freq_t coarse = clusters[c].peak_freq;
         RefineFFTPeak(sockfd, &clusters[c].peak_freq,
-                       out_center,
+                       out_center, &clusters[c].peak_level,
                        filter_bw, filter_bw / 100,
                        freq_min, freq_max);
 
@@ -2425,13 +2428,14 @@ static void RefreshCandidates(
             /* New candidate — refine to sub-bin precision before adding. */
             freq_t refined = current_peaks[j].peak_freq;
             freq_t out_center = 0;
+            double refined_level = current_peaks[j].peak_level;
 
-            if (RefineFFTPeak(sockfd, &refined, &out_center,
+            if (RefineFFTPeak(sockfd, &refined, &out_center, &refined_level,
                               filter_bw, filter_bw / 100,
                               freq_min, freq_max))
             {
                 clusters[*n_clusters].peak_freq  = refined;
-                clusters[*n_clusters].peak_level = current_peaks[j].peak_level;
+                clusters[*n_clusters].peak_level = refined_level;
                 clusters[*n_clusters].visited    = false;
                 (*n_clusters)++;
             }
