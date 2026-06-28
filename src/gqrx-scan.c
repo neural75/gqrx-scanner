@@ -737,16 +737,16 @@ bool Reconnect(void);
 //
 typedef struct {
     struct timeval start;
-    long           now;          // µs since start (set by tick)
-    long           silence_at;   // µs when silence began (0 = not silent)
-    long           drop_at;      // µs when drop began (0 = not dropped)
+    long           elapsed_us;     // µs since start (set by tick)
+    long           silence_since;  // µs when silence began (0 = not silent)
+    long           drop_since;     // µs when drop began (0 = not dropped)
     bool           voice_heard;
 } listen_timer_t;
 
 static inline void listen_timer_init(listen_timer_t *t)
 {
     gettimeofday(&t->start, NULL);
-    t->now = t->silence_at = t->drop_at = 0;
+    t->elapsed_us = t->silence_since = t->drop_since = 0;
     t->voice_heard = false;
 }
 
@@ -754,50 +754,54 @@ static inline void listen_timer_tick(listen_timer_t *t)
 {
     struct timeval now;
     gettimeofday(&now, NULL);
-    t->now = (now.tv_sec - t->start.tv_sec) * 1000000L
-           + (now.tv_usec - t->start.tv_usec);
+    t->elapsed_us = (now.tv_sec - t->start.tv_sec) * 1000000L
+                  + (now.tv_usec - t->start.tv_usec);
 }
 
 static inline void listen_timer_on_voice(listen_timer_t *t)
 {
     t->voice_heard = true;
-    t->silence_at = 0;
-    t->drop_at = 0;
+    t->silence_since = 0;
+    t->drop_since = 0;
 }
 
 static inline void listen_timer_on_silence(listen_timer_t *t)
 {
-    if (!t->silence_at)
-        t->silence_at = t->now;
+    if (!t->silence_since)
+        t->silence_since = t->elapsed_us;
 }
 
 static inline void listen_timer_on_drop(listen_timer_t *t)
 {
-    if (!t->drop_at)
-        t->drop_at = t->now;
+    if (!t->drop_since)
+        t->drop_since = t->elapsed_us;
+    /* Reset the VOX silence counter — the carrier is gone, so any
+     * previous "no voice" measurement is stale.  When the carrier
+     * returns the VOX probe/hangup will start fresh. */
+    t->silence_since = 0;
 }
 
 static inline void listen_timer_on_signal(listen_timer_t *t)
 {
-    t->drop_at = 0;
+    t->drop_since = 0;
 }
 
 // Returns true when probe (no voice heard yet) or hangup (threshold ms of
-// consecutive silence after voice) expires.  silence_at == 0 means "not
+// consecutive silence after voice) expires.  silence_since == 0 means "not
 // currently in silence" — exit can never fire in that state.
 static inline bool listen_timer_should_exit(listen_timer_t *t,
     long probe_us, long hangup_us)
 {
     if (t->voice_heard)
-        return t->silence_at && hangup_us > 0
-            && t->now - t->silence_at >= hangup_us;
-    return probe_us > 0 && t->now >= probe_us;
+        return t->silence_since && hangup_us > 0
+            && t->elapsed_us - t->silence_since >= hangup_us;
+    return probe_us > 0 && t->elapsed_us >= probe_us;
 }
 
 // Returns true when below-squelch duration exceeds delay.
 static inline bool listen_timer_drop_expired(listen_timer_t *t, long delay_us)
 {
-    return t->drop_at && (t->now - t->drop_at > delay_us);
+    return t->drop_since && (t->elapsed_us - t->drop_since > delay_us);
 }
 
 
@@ -889,7 +893,7 @@ bool WaitUserInputOrDelay(long delay, freq_t *current_freq)
                 }
             }
 
-            // Tick after VAD so tmr.now includes VAD processing time.
+            // Tick after VAD so tmr.elapsed_us includes VAD processing time.
             listen_timer_tick(&tmr);
 
             if (listen_timer_should_exit(&tmr, opt_max_probe, opt_max_listen))
@@ -899,7 +903,10 @@ bool WaitUserInputOrDelay(long delay, freq_t *current_freq)
 #endif
         {
             listen_timer_tick(&tmr);
-            if (opt_max_listen != 0 && tmr.now >= opt_max_listen)
+            /* Only enforce the listen-time cap when the carrier
+             * is active.  During a drop, the -d drop timer governs. */
+            if (opt_max_listen != 0 && level >= squelch &&
+                tmr.elapsed_us >= opt_max_listen)
             { exit = 1; skip = true; }
         }
 
