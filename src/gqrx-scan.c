@@ -1261,6 +1261,30 @@ static int cmp_cluster_asc(const void *a, const void *b)
     return 0;
 }
 
+/* Sum linear power across bins within a bandwidth around a centre
+ * frequency and return the equivalent level in dBFS.  The caller
+ * provides an array of linear (not dB) power accumulated over
+ * n_reads independent captures.
+ *
+ * This reconstructs the per-bin-width level that the coarse sweep
+ * measures (filter_bw resolution), so the returned value is
+ * comparable to the squelch threshold. */
+static double GetPowerLevel(const float *power_per_bin, int n_bins,
+                             double bin_start_hz, double bin_step_hz,
+                             double centre_hz, double half_bw_hz,
+                             int n_reads)
+{
+    double sum = 0.0;
+    for (int i = 0; i < n_bins; i++)
+    {
+        double freq = bin_start_hz + (double)i * bin_step_hz;
+        double dist = freq > centre_hz ? freq - centre_hz : centre_hz - freq;
+        if (dist <= half_bw_hz)
+            sum += (double)power_per_bin[i];
+    }
+    return 10.0 * log10(sum / (double)n_reads + 1.0e-20);
+}
+
 /* Refine a coarse candidate by reading a local high-res FFT around it.
  * radius_hz  : search half-range (±radius_hz around candidate)
  * fine_bw_hz : refinement bin width (e.g. filter_bw / 100)
@@ -1469,7 +1493,8 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
     if (out_center)
         *out_center = rc;
     if (out_level)
-        *out_level = (double)best_val;
+        *out_level = GetPowerLevel(accum, nv, rs, rb, centre,
+                                    (double)radius_hz / 2.0, n_valid);
 
     free(accum);
     free(vals);
