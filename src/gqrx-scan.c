@@ -536,13 +536,14 @@ bool ParseInputOptions (int argc, char **argv)
 //
 // return a statically allocated string of the freq to be printed out.
 // Uses a ring of buffers so multiple calls in the same printf are safe.
-char * print_freq (freq_t freq)
+char * print_freq (freq_t freq, bool show_hz)
 {
-    // fist round up to khz
-    freq = round ( freq / 1000.0 ) * 1000.0;
+    if (!show_hz)
+        freq = round ( freq / 1000.0 ) * 1000.0;
     long Ghz = freq/1000000000;
     long Mhz = (freq/1000000)%1000;
     long Khz = (freq/1000)%1000;
+    long Hz  = freq % 1000;
 
     char *buf = freq_bufs[freq_buf_idx];
     freq_buf_idx = (freq_buf_idx + 1) % PRINT_FREQ_BUFS;
@@ -550,18 +551,27 @@ char * print_freq (freq_t freq)
     char temp[256];
     if (Ghz)
     {
-        sprintf (temp, "%ld.%3.3ld.%3.3ld GHz", Ghz, Mhz, Khz);
+        sprintf (temp, show_hz
+                 ? "%ld.%3.3ld.%3.3ld.%3.3ld GHz"
+                 : "%ld.%3.3ld.%3.3ld GHz",
+                 Ghz, Mhz, Khz, Hz);
         strcat(buf, temp);
         return buf;
     }
     if (Mhz)
     {
-        sprintf (temp, "%ld.%3.3ld MHz", Mhz, Khz);
+        sprintf (temp, show_hz
+                 ? "%ld.%3.3ld.%3.3ld MHz"
+                 : "%ld.%3.3ld MHz",
+                 Mhz, Khz, Hz);
         strcat(buf, temp);
         return buf;
     }
 
-    sprintf (temp, "%ld KHz", Khz);
+    sprintf (temp, show_hz
+             ? "%ld.%3.3ld KHz"
+             : "%ld KHz",
+             Khz, Hz);
     strcat(buf, temp);
     return buf;
 }
@@ -1132,7 +1142,7 @@ bool ScanBookmarkedFrequenciesInRange(freq_t freq_min, freq_t freq_max)
                         }
                         struct timeval hit_time = GetTime(timestamp);
                         printf ("[%s] Freq: %s active [%s], Level: %2.2f/%2.2f ",
-                                timestamp, print_freq(current_freq),
+                                timestamp, print_freq(current_freq, false),
                                 Frequencies[i].descr, level, squelch);
                         fflush(stdout);
                         skip = WaitUserInputOrDelay(opt_delay, &current_freq);
@@ -1214,7 +1224,7 @@ static void print_top_peaks(double start_freq, double bin_bw,
         double freq_hz = start_freq + (double)peaks[j].idx * bin_bw;
         printf("  #%-2d  %s  %+.1f dBFS\n",
                j + 1,
-               print_freq((freq_t)(freq_hz / 1000.0 + 0.5) * 1000),
+               print_freq((freq_t)(freq_hz / 1000.0 + 0.5) * 1000, false),
                (double)peaks[j].level);
     }
     fflush(stdout);
@@ -1261,6 +1271,7 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
                            freq_t *out_center,
                            double *out_level,
                            int radius_hz, int fine_bw_hz,
+                           double native_bin_width,
                            freq_t freq_min, freq_t freq_max)
 {
     const int refine_n_reads = 3;
@@ -1268,7 +1279,22 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
     const float refine_edge_db = 12.0f;
     const int refine_rounding = 100;
 
-    int n_bins = (2 * radius_hz) / fine_bw_hz + 1;
+    /* Clamp the requested bin width to the native FFT resolution.
+     * Gqrx cannot serve sub-native bins — filter_bw/100 may be 2 Hz
+     * (CW-U) while the hardware FFT bins are ~33 Hz. */
+    int min_bw = (int)ceil(native_bin_width);
+    if (fine_bw_hz < min_bw)
+        fine_bw_hz = min_bw;
+
+    /* Ceiling division: the refinement window must span at least
+     * 2 × radius_hz so the candidate sits in the middle with the
+     * full ±radius_hz margin.  Integer truncation of (2*R)/W can
+     * fall short by up to W-1 Hz, which loses the edge guarantee.
+     * A symmetric odd count ensures the candidate lands on the
+     * center bin (left/right edge walk is balanced). */
+    int n_bins = (2 * radius_hz + fine_bw_hz - 1) / fine_bw_hz;
+    if (n_bins % 2 == 0)
+        n_bins++;
     float *vals = malloc((size_t)n_bins * sizeof(float));
     if (!vals)
         return false;
@@ -1309,12 +1335,15 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
                     &rc, &rs, &re, &rb, &rn, &nv) || nv <= 0)
             continue;
 
-        // Verify the returned FFT window covers the requested range.
-        // Gqrx may silently return data from the visible band when
-        // the requested sub-range falls outside the visible spectrum,
-        // which would shift the centroid to a different frequency.
+        /* Verify the returned FFT window covers the requested range.
+         * Gqrx may silently return data from the visible band when
+         * the requested sub-range falls outside the visible spectrum,
+         * which would shift the centroid to a different frequency.
+         * Use the actual returned bin width rb as tolerance — Gqrx
+         * aligns rs to its real bin grid, which may differ from the
+         * requested fine_bw_hz when pooling is coarser. */
         double requested_start = (double)*candidate - radius_hz;
-        if (fabs(rs - requested_start) > (double)fine_bw_hz)
+        if (fabs(rs - requested_start) > rb)
             continue;
 
         for (int j = 0; j < nv; j++)
@@ -1381,8 +1410,14 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
                    best_idx, best_val);
     }
 
-    /* Walk left/right to find edges of the spectral bump */
-    float floor_db = best_val - refine_edge_db;
+    /* Estimate noise floor from the quietest bin in the window, so the
+     * edge threshold never drops below the visible noise.  Without this
+     * the -12 dB walk walks through noise to the window boundary, and
+     * the "truncated bump" check below falsely rejects the refinement. */
+    float min_val = vals[0];
+    for (int j = 1; j < nv; j++)
+        if (vals[j] < min_val) min_val = vals[j];
+    float floor_db = fmaxf(best_val - refine_edge_db, min_val + 3.0f);
     int left = best_idx;
     while (left > 0 && vals[left - 1] > floor_db)
         left--;
@@ -1426,8 +1461,8 @@ static bool RefineFFTPeak(int sockfd, freq_t *candidate,
         printf("[FFT] refine %d/%d dly=%d -> best_idx=%d best_val=%.1f "
                "left=%d right=%d centre=%.0f centroid=%s\n",
                n_valid, refine_n_reads, refine_delay_us,
-               best_idx, best_val, left, right, centre,
-               print_freq(*candidate));
+                best_idx, best_val, left, right, centre,
+                print_freq(*candidate, true));
         fflush(stdout);
     }
 
@@ -1461,6 +1496,8 @@ FineTunePeaks(
     fft_cluster_t  *clusters,
     int             n_clusters,
     int             filter_bw,
+    double          fft_bin,
+    double          native_bin_bw,
     freq_t         *out_center,
     freq_t          previous_center,
     freq_t          freq_min,
@@ -1483,7 +1520,7 @@ FineTunePeaks(
         RefineFFTPeak(sockfd, &clusters[c].peak_freq,
                        out_center, &clusters[c].peak_level,
                        filter_bw, filter_bw / 100,
-                       freq_min, freq_max);
+                       native_bin_bw, freq_min, freq_max);
 
         /* Abort remaining refinements if the centre drifted — the
          * candidate list is stale for the new centre. */
@@ -1494,8 +1531,8 @@ FineTunePeaks(
         if (opt_verbose && coarse != clusters[c].peak_freq)
         {
             printf("[FFT] refine %s -> %s\n",
-                   print_freq(coarse),
-                   print_freq(clusters[c].peak_freq));
+                   print_freq(coarse, true),
+                   print_freq(clusters[c].peak_freq, true));
             fflush(stdout);
         }
     }
@@ -1524,7 +1561,7 @@ VerifyCenterFrequency(int sockfd, int fft_bw,
 
         if (!GetFFTParameters(sockfd, fft_bw,
                               &v_center, &dummy_s, &dummy_e,
-                              &dummy_b, &dummy_n, &dummy_c))
+                              &dummy_b, &dummy_n, &dummy_c, NULL))
             return true;   /* socket issue — let the caller handle it */
     }
 
@@ -2230,14 +2267,13 @@ static void CollectCoarsePeaks(
                 continue;
             }
 
-            freq_t candidate = (freq_t)((fft_start + (double)midx * fft_bin)
-                                        / 1000.0 + 0.5) * 1000;
+            freq_t candidate = (freq_t)(fft_start + (double)midx * fft_bin);
 
             if (candidate < freq_min || candidate > freq_max)
             {
                 if (opt_verbose)
                     printf("[FFT] skip out-of-range %s (%.0f-%.0f)\n",
-                           print_freq(candidate),
+                           print_freq(candidate, true),
                            (double)freq_min, (double)freq_max);
                 continue;
             }
@@ -2250,8 +2286,8 @@ static void CollectCoarsePeaks(
                 if (opt_verbose)
                 {
                     printf("[FFT] merge skip %s (prev=%s, dist < %llu)\n",
-                           print_freq(candidate),
-                           print_freq(prev_candidate),
+                           print_freq(candidate, true),
+                           print_freq(prev_candidate, true),
                            opt_scan_bw);
                     fflush(stdout);
                 }
@@ -2264,7 +2300,7 @@ static void CollectCoarsePeaks(
                 if (opt_verbose)
                 {
                     printf("[FFT] candidate %s banned, skipping\n",
-                           print_freq(candidate));
+                           print_freq(candidate, true));
                     fflush(stdout);
                 }
                 continue;
@@ -2295,7 +2331,7 @@ static void SortCandidatesByLevel(
         {
             printf("  #%d  %s  peak=%.1f dBFS\n",
                    c + 1,
-                   print_freq(clusters[c].peak_freq),
+                   print_freq(clusters[c].peak_freq, true),
                    clusters[c].peak_level);
         }
         fflush(stdout);
@@ -2333,13 +2369,15 @@ static void RefreshCandidates(
     double fft_start     = 0;
     double fft_end       = 0;
     double fft_bin       = 0;
+    double native_bin_bw     = 0;
     int    total         = 0;
     int    count         = 0;
 
     /* Read fresh FFT geometry and spectrum. */
     if (!GetFFTParameters(sockfd, filter_bw,
                           &center, &fft_start, &fft_end,
-                          &fft_bin, &total, &count))
+                          &fft_bin, &total, &count,
+                          &native_bin_bw))
         return;
 
     if (total <= 0 || count <= 0)
@@ -2432,7 +2470,7 @@ static void RefreshCandidates(
 
             if (RefineFFTPeak(sockfd, &refined, &out_center, &refined_level,
                               filter_bw, filter_bw / 100,
-                              freq_min, freq_max))
+                              native_bin_bw, freq_min, freq_max))
             {
                 clusters[*n_clusters].peak_freq  = refined;
                 clusters[*n_clusters].peak_level = refined_level;
@@ -2521,7 +2559,7 @@ static bool ProcessCandidates(
         if (opt_verbose)
         {
             printf("[FFT] tuning to %s for verify\n",
-                   print_freq(candidate));
+                   print_freq(candidate, true));
             fflush(stdout);
         }
 
@@ -2543,7 +2581,7 @@ static bool ProcessCandidates(
         if (opt_verbose)
         {
             printf("[FFT] verify %s fft_peak=%.1f audio_level=%.1f sq=%.1f %s\n",
-                   print_freq(candidate), peak_level,
+                   print_freq(candidate, true), peak_level,
                    level, *squelch,
                    (level >= *squelch) ? "ACCEPT" : "REJECT");
             fflush(stdout);
@@ -2570,7 +2608,7 @@ static bool ProcessCandidates(
         char timestamp[BUFSIZE] = {0};
         struct timeval hit_time = GetTime(timestamp);
         printf("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
-               timestamp, print_freq(candidate),
+               timestamp, print_freq(candidate, true),
                peak_level, *squelch);
         fflush(stdout);
 
@@ -2625,12 +2663,13 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 
     // Query FFT parameters to get visible spectrum geometry
     freq_t fft_center = 0;
-    double fft_start = 0, fft_end = 0, fft_bin = 0;
+    double fft_start = 0, fft_end = 0, fft_bin = 0, native_bin_bw = 0;
     int fft_total = 0, fft_count = 0;
 
     if (!GetFFTParameters(g_sockfd, filter_bw,
                           &fft_center, &fft_start, &fft_end,
-                          &fft_bin, &fft_total, &fft_count))
+                          &fft_bin, &fft_total, &fft_count,
+                          &native_bin_bw))
     {
         fprintf(stderr, "Error: Gqrx does not support the FFT extension.\n");
         return false;
@@ -2638,8 +2677,8 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 
     if (opt_verbose)
     {
-        printf("[FFT] initial params: F=%llu S=%.0f E=%.0f B=%.4f N=%d filter_bw=%llu\n",
-               fft_center, fft_start, fft_end, fft_bin, fft_total, filter_bw);
+        printf("[FFT] initial params: F=%llu S=%.0f E=%.0f B=%.4f(N=%.4f) N=%d filter_bw=%llu\n",
+               fft_center, fft_start, fft_end, fft_bin, native_bin_bw, fft_total, filter_bw);
         fflush(stdout);
     }
 
@@ -2683,7 +2722,8 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 
         if (GetFFTParameters(g_sockfd, filter_bw,
                              &fft_center, &fft_start, &fft_end,
-                             &fft_bin, &fft_total, &fft_count))
+                             &fft_bin, &fft_total, &fft_count,
+                             &native_bin_bw))
         {
             if (fft_total > max_bins)
             {
@@ -2697,8 +2737,8 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
 
             if (opt_verbose)
             {
-                printf("[FFT] params updated: filter_bw=%llu F=%llu B=%.4f N=%d\n",
-                       filter_bw, fft_center, fft_bin, fft_total);
+                printf("[FFT] params updated: filter_bw=%llu F=%llu B=%.4f(N=%.4f) N=%d\n",
+                       filter_bw, fft_center, fft_bin, native_bin_bw, fft_total);
                 fflush(stdout);
             }
         }
@@ -2786,7 +2826,7 @@ bool ScanFrequenciesInRangeFFT(freq_t freq_min, freq_t freq_max)
         // Fine-tune all candidate frequencies with sub-bin precision.
         //
         FineTunePeaks(g_sockfd, clusters, n_clusters, filter_bw,
-                      &fft_center, previous_center,
+                      fft_bin, native_bin_bw, &fft_center, previous_center,
                       freq_min, freq_max, &squelch);
 
         /* Verify the FFT centre hasn't drifted during refinement.
@@ -3014,7 +3054,7 @@ bool BacktrackFrequency(freq_t current_freq, freq_t freq_interval,
         if (opt_verbose)
         {
             printf("[BACKTRACK] probe[%d] freq=%s level=%.2f squelch=%.2f (%s)\n",
-                   i, print_freq(current_freq), level, squelch,
+                   i, print_freq(current_freq, false), level, squelch,
                    above_trace[i] ? "above" : "below");
             fflush(stdout);
         }
@@ -3071,7 +3111,7 @@ bool BacktrackFrequency(freq_t current_freq, freq_t freq_interval,
         }
         if (opt_verbose)
             printf("[BACKTRACK] single above-squelch candidate at %s (%.1f dBFS, %.0f dB above squelch) — accepted\n",
-                   print_freq(freq_trace[ci]), level_trace[ci], level_trace[ci] - squelch);
+                   print_freq(freq_trace[ci], false), level_trace[ci], level_trace[ci] - squelch);
     }
 
     //
@@ -3093,7 +3133,7 @@ bool BacktrackFrequency(freq_t current_freq, freq_t freq_interval,
     if (opt_verbose)
     {
         printf("[BACKTRACK] peak at %s level=%.2f (%d above-squelch candidate(s))\n",
-               print_freq(freq_trace[candidate_indices[0]]),
+               print_freq(freq_trace[candidate_indices[0]], false),
                level_trace[candidate_indices[0]],
                n_candidates);
         fflush(stdout);
@@ -3350,7 +3390,7 @@ bool ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interv
 
             if (opt_verbose)
             {
-                printf("\nFreq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq), level, squelch);
+                printf("\nFreq: %s Signal: %2.2f Squelch: %2.2f\n", print_freq(current_freq, false), level, squelch);
                 fflush (stdout);
             }
 
@@ -3440,7 +3480,7 @@ bool ScanFrequenciesInRange(freq_t freq_min, freq_t freq_max, freq_t freq_interv
 
                     struct timeval hit_time = GetTime(timestamp);
                     printf ("[%s] Freq: %s active, Level: %2.2f/%2.2f ",
-                            timestamp, print_freq(current_freq),
+                            timestamp, print_freq(current_freq, false),
                             level, squelch );
                     fflush(stdout);
                     // Wait user input or delay time after signal lost
@@ -3632,8 +3672,8 @@ int main(int argc, char **argv) {
          (opt_min_freq == opt_max_freq)                  )
        ) // or only max specified
     {
-        strcpy (from, print_freq(opt_min_freq));
-        strcpy (to,   print_freq(opt_max_freq));
+        strcpy (from, print_freq(opt_min_freq, false));
+        strcpy (to,   print_freq(opt_max_freq, false));
         printf ("Error: Invalid frequency range: begin:%s, end=%s.\n", from, to);
         printf ("       Please specify '-f <freq>' or '-b <begin_freq> -e <end_freq>.\n");
         print_usage(argv[0]);
@@ -3682,8 +3722,8 @@ int main(int argc, char **argv) {
         printf ("Warning: search tags on the entire frequency range!\n");
     }
 
-    strcpy (from, print_freq(opt_min_freq));
-    strcpy (to,   print_freq(opt_max_freq));
+    strcpy (from, print_freq(opt_min_freq, false));
+    strcpy (to,   print_freq(opt_max_freq, false));
     printf ("Frequency range set from %s to %s.\n", from, to);
 
     if (opt_scan_mode == bookmark)

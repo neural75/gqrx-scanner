@@ -131,7 +131,8 @@ bool GetFilterBandwidth(int sockfd, freq_t *bw_hz);
 bool GetFFTParameters(int sockfd, int fft_bw,
                       freq_t *center_freq, double *start_hz,
                       double *end_hz, double *bin_width,
-                      int *total_bins, int *count);
+                      int *total_bins, int *count,
+                      double *native_bin_width);
 
 bool GetFFTValues(int sockfd, int fft_bw,
                   float *values, int max_values,

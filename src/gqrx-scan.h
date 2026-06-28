@@ -53,7 +53,7 @@ extern long      opt_max_probe;
 /* Functions */
 extern bool   LoadFrequencies(FILE *bookmarksfd);
 extern bool   prefix(const char *pre, const char *str);
-extern char  *print_freq(freq_t freq);
+extern char  *print_freq(freq_t freq, bool show_hz);
 extern bool   ParseTags(char *tags);
 extern bool   SaveFreq(freq_t freq_current);
 extern bool   BanFreq(freq_t freq_current);

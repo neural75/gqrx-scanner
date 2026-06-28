@@ -580,29 +580,53 @@ bool GetFilterBandwidth(int sockfd, freq_t *bw_hz)
 bool GetFFTParameters(int sockfd, int fft_bw,
                       freq_t *center_freq, double *start_hz,
                       double *end_hz, double *bin_width,
-                      int *total_bins, int *count)
+                      int *total_bins, int *count,
+                      double *native_bin_width)
 {
     char cmd[BUFSIZE];
-    snprintf(cmd, sizeof(cmd), "FFT Q W:%d\n", fft_bw);
+    char *resp = NULL;
 
+    /* Query 1: "FFT Q W:1\n" — the formula pool=round(W/native_bw)
+     * clamps to 1 when W: < 1.5×native_bw, returning native resolution.
+     * Bare "FFT Q" defaults W: to the channel filter bandwidth (per the
+     * remote-control.txt protocol spec), so we must be explicit. */
+    snprintf(cmd, sizeof(cmd), "FFT Q W:1\n");
     if (!Send(sockfd, cmd))
         return false;
 
-    char *resp = NULL;
     if (!RecvResponse(sockfd, &resp, NULL))
         return false;
 
     int rprt;
+    freq_t dummy_c;
+    double dummy_s, dummy_e, nbw;
+    int dummy_n, dummy_c2;
     int matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
-                         &rprt, center_freq, start_hz, end_hz,
-                         bin_width, total_bins, count);
-
+                         &rprt, &dummy_c, &dummy_s, &dummy_e,
+                         &nbw, &dummy_n, &dummy_c2);
     FreeResponse(&resp);
 
     if (matched != 7 || rprt != 0)
         return false;
 
-    return true;
+    if (native_bin_width)
+        *native_bin_width = nbw;
+
+    /* Query 2: pooled "FFT Q W:<fft_bw>" — returns B: at the requested
+     * filter bandwidth.  These are the values the sweep logic needs. */
+    snprintf(cmd, sizeof(cmd), "FFT Q W:%d\n", fft_bw);
+    if (!Send(sockfd, cmd))
+        return false;
+
+    if (!RecvResponse(sockfd, &resp, NULL))
+        return false;
+
+    matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
+                     &rprt, center_freq, start_hz, end_hz,
+                     bin_width, total_bins, count);
+    FreeResponse(&resp);
+
+    return (matched == 7 && rprt == 0);
 }
 
 //
@@ -750,7 +774,7 @@ bool CheckFFTSupport(void)
     double start, end, bw;
     int n, c;
     return GetFFTParameters(g_sockfd, 10000,
-                            &center, &start, &end, &bw, &n, &c);
+                            &center, &start, &end, &bw, &n, &c, NULL);
 }
 
 //
@@ -768,7 +792,7 @@ void GetSafeRange(freq_t *p_min, freq_t *p_max, freq_t *p_center)
     double start, end, bw;
     int total, count;
     if (!GetFFTParameters(g_sockfd, 10000, &center, &start, &end,
-                          &bw, &total, &count))
+                          &bw, &total, &count, NULL))
     {
         *p_min = 0;
         *p_max = 0;

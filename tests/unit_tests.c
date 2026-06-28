@@ -195,7 +195,7 @@ static void test_print_freq_ghz_range(void **state)
     
     /* Test GHz range formatting */
     freq_t freq = 1234567890000ULL; /* 1234.567.890 GHz */
-    char *result = print_freq(freq);
+    char *result = print_freq(freq, false);
     
     assert_non_null(result);
     assert_string_equal(result, "1234.567.890 GHz");
@@ -207,14 +207,14 @@ static void test_print_freq_mhz_range(void **state)
     
     /* Test MHz range formatting */
     freq_t freq = 145000000; /* 145.000 MHz */
-    char *result = print_freq(freq);
+    char *result = print_freq(freq, false);
     
     assert_non_null(result);
     assert_string_equal(result, "145.000 MHz");
     
     /* Test another MHz value */
     freq = 430037000; /* 430.037 MHz */
-    result = print_freq(freq);
+    result = print_freq(freq, false);
     assert_string_equal(result, "430.037 MHz");
 }
 
@@ -224,7 +224,7 @@ static void test_print_freq_khz_range(void **state)
     
     /* Test KHz range formatting */
     freq_t freq = 10000; /* 10 KHz */
-    char *result = print_freq(freq);
+    char *result = print_freq(freq, false);
     
     assert_non_null(result);
     assert_string_equal(result, "10 KHz");
@@ -236,7 +236,7 @@ static void test_print_freq_rounding(void **state)
     
     /* Test rounding to nearest KHz */
     freq_t freq = 145000500; /* Should round to 145.001 MHz */
-    char *result = print_freq(freq);
+    char *result = print_freq(freq, false);
     
     assert_non_null(result);
     assert_string_equal(result, "145.001 MHz");
