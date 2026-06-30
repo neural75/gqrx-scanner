@@ -570,12 +570,15 @@ bool GetFilterBandwidth(int sockfd, freq_t *bw_hz)
 // the response header.  No FFT bin values are returned.
 //
 // Returns:
-//   center_freq — receiver's tuned center frequency (F:)
-//   start_hz    — center of the first visible bin (S:)
-//   end_hz      — center of the last  visible bin (E:)
-//   bin_width   — width of each FFT bin in Hz (B:)
-//   total_bins  — total bins in the full spectrum (N:)
-//   count       — bins in this response (C:)
+//   center_freq        — receiver's tuned center frequency (F:)
+//   start_hz           — center of the first visible bin (S:)
+//   end_hz             — center of the last  visible bin (E:)
+//   bin_width          — pooled bin width in Hz (B:)
+//   total_bins         — total bins in the full spectrum (N:)
+//   count              — bins in this response (C:)
+//   native_bin_width   — native FFT bin width in Hz (R:/Z:),
+//                        computed from the quad_rate and fftsize
+//                        fields now returned in every response
 //
 bool GetFFTParameters(int sockfd, int fft_bw,
                       freq_t *center_freq, double *start_hz,
@@ -586,34 +589,10 @@ bool GetFFTParameters(int sockfd, int fft_bw,
     char cmd[BUFSIZE];
     char *resp = NULL;
 
-    /* Query 1: "FFT Q W:1\n" — the formula pool=round(W/native_bw)
-     * clamps to 1 when W: < 1.5×native_bw, returning native resolution.
-     * Bare "FFT Q" defaults W: to the channel filter bandwidth (per the
-     * remote-control.txt protocol spec), so we must be explicit. */
-    snprintf(cmd, sizeof(cmd), "FFT Q W:1\n");
-    if (!Send(sockfd, cmd))
-        return false;
-
-    if (!RecvResponse(sockfd, &resp, NULL))
-        return false;
-
-    int rprt;
-    freq_t dummy_c;
-    double dummy_s, dummy_e, nbw;
-    int dummy_n, dummy_c2;
-    int matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
-                         &rprt, &dummy_c, &dummy_s, &dummy_e,
-                         &nbw, &dummy_n, &dummy_c2);
-    FreeResponse(&resp);
-
-    if (matched != 7 || rprt != 0)
-        return false;
-
-    if (native_bin_width)
-        *native_bin_width = nbw;
-
-    /* Query 2: pooled "FFT Q W:<fft_bw>" — returns B: at the requested
-     * filter bandwidth.  These are the values the sweep logic needs. */
+    /* Single pooled query — "FFT Q W:<fft_bw>".
+     * The response now carries R:<rate> and Z:<fftsize> (since the
+     * protocol PR #1458), so native bin width = R / Z without an
+     * extra native-resolution probe. */
     snprintf(cmd, sizeof(cmd), "FFT Q W:%d\n", fft_bw);
     if (!Send(sockfd, cmd))
         return false;
@@ -621,12 +600,27 @@ bool GetFFTParameters(int sockfd, int fft_bw,
     if (!RecvResponse(sockfd, &resp, NULL))
         return false;
 
-    matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
-                     &rprt, center_freq, start_hz, end_hz,
-                     bin_width, total_bins, count);
+    int rprt;
+    double quad_rate;
+    unsigned int fftsize;
+    /* R: and Z: sit between F: and S: in the response line:
+     *   RPRT 0 F:27155000 R:5000000 Z:131072 S:... E:... B:... N:... C:... */
+    int matched = sscanf(resp,
+                         "RPRT %d F:%llu R:%lf Z:%u "
+                         "S:%lf E:%lf B:%lf N:%d C:%d",
+                         &rprt, center_freq,
+                         &quad_rate, &fftsize,
+                         start_hz, end_hz,
+                         bin_width, total_bins, count);
     FreeResponse(&resp);
 
-    return (matched == 7 && rprt == 0);
+    if (matched != 9 || rprt != 0)
+        return false;
+
+    if (native_bin_width)
+        *native_bin_width = quad_rate / (double)fftsize;
+
+    return true;
 }
 
 //
@@ -655,11 +649,17 @@ bool GetFFTValues(int sockfd, int fft_bw,
         return false;
 
     int rprt;
-    int matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
-                         &rprt, center_freq, start_hz, end_hz,
+    double quad_rate;
+    unsigned int fftsize;
+    int matched = sscanf(resp,
+                         "RPRT %d F:%llu R:%lf Z:%u "
+                         "S:%lf E:%lf B:%lf N:%d C:%d",
+                         &rprt, center_freq,
+                         &quad_rate, &fftsize,
+                         start_hz, end_hz,
                          bin_width, total_bins, count);
 
-    if (matched != 7 || rprt != 0)
+    if (matched != 9 || rprt != 0)
     {
         FreeResponse(&resp);
         return false;
@@ -721,11 +721,17 @@ bool GetFFTValuesPartial(int sockfd, double start_hz, int n_bins, int fft_bw,
         return false;
 
     int rprt;
-    int matched = sscanf(resp, "RPRT %d F:%llu S:%lf E:%lf B:%lf N:%d C:%d",
-                         &rprt, center_freq, start_hz_out, end_hz_out,
+    double quad_rate;
+    unsigned int fftsize;
+    int matched = sscanf(resp,
+                         "RPRT %d F:%llu R:%lf Z:%u "
+                         "S:%lf E:%lf B:%lf N:%d C:%d",
+                         &rprt, center_freq,
+                         &quad_rate, &fftsize,
+                         start_hz_out, end_hz_out,
                          bin_width, total_bins, count_out);
 
-    if (matched != 7 || rprt != 0)
+    if (matched != 9 || rprt != 0)
     {
         FreeResponse(&resp);
         return false;
