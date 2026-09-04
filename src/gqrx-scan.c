@@ -61,6 +61,7 @@ SOFTWARE.
 #include <string.h>
 #include <errno.h>
 #include <sys/time.h>
+#include <signal.h>
 #include "gqrx-prot.h"
 #include "gqrx-scan.h"
 #ifndef OSX
@@ -1903,6 +1904,15 @@ int main(int argc, char **argv) {
     char *hostname;
     char buf[BUFSIZE];
     FILE *bookmarksfd = NULL;
+
+    // Ignore SIGPIPE: a write() to a socket the peer has already reset
+    // (e.g. Gqrx's remote control dropping us for a second client) is a
+    // recoverable error, and Send()/g_socket_dead already handle it via
+    // the write() return value -- but only if the process survives the
+    // call. Without this, the default SIGPIPE disposition kills the
+    // process on that write before it can ever return, silently, with
+    // none of that error handling ever running.
+    signal(SIGPIPE, SIG_IGN);
 
     opt_hostname = (char *) g_hostname;
     opt_port     = g_portno;
