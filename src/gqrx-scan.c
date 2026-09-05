@@ -670,7 +670,22 @@ void CheckUserInput (void)
         hit = kbhit();
         if (hit !=  0)
         {
-            c = fgetc(stdin);
+            // fgetc() must be captured as an int (not narrowed to `c` yet)
+            // so it can be compared against EOF: select()-based kbhit()
+            // reports a stdin with no controlling terminal (e.g. /dev/null,
+            // as happens when this process is backgrounded/detached) as
+            // always "ready to read", since reading such a stdin never
+            // blocks -- it just returns EOF instantly. Without this check,
+            // `hit` would stay nonzero forever and the loop below would
+            // never terminate, spinning at 100% CPU instead of returning
+            // to the caller.
+            int ch = fgetc(stdin);
+            if (ch == EOF)
+            {
+                hit = 0;
+                break;
+            }
+            c = (char)ch;
             switch (c)
             {
                 case 'c':
